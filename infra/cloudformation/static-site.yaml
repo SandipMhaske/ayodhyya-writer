@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Ayodhyya Writer static site — S3 (private, OAC) + CloudFront (HTTPS, compression) + Route53 + ACM + optional WAF. No EC2/RDS.
+
+# COST DESIGN — stays under ~$1/month at low traffic (see README "Running under $1/month"):
+#   Route 53 hosted zone .... $0.50/mo fixed (or $0 with external free DNS + CreateDnsRecord=false)
+#   S3 ........................ ~$0.02-0.05/mo (tiny site; lifecycle caps version history)
+#   CloudFront .................. ~$0.05-0.30/mo (no fixed fee; price class 100; edge caching)
+#   ACM ......................... $0. WAF is OFF by default (it alone costs ~$5/mo — never enable it on this budget).
+#   Deploy service runs on YOUR machine at publish time ($0) — never as an always-on server.
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: www.ayodhyya.com
+    Description: Primary domain (ACM cert must cover it).
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Route 53 hosted zone ID. Leave empty when CreateDnsRecord=false (external free DNS).
+  CreateDnsRecord:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'false = point external free DNS (e.g. Cloudflare CNAME) at the CloudFront domain; saves the $0.50/mo Route 53 zone.'
+  AcmCertificateArn:
+    Type: String
+    Description: ACM cert ARN in us-east-1 covering DomainName.
+  EnableWAF:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  PriceClass:
+    Type: String
+    Default: PriceClass_100
+
+Conditions:
+  UseWAF: !Equals [!Ref EnableWAF, 'true']
+  CreateDns: !Equals [!Ref CreateDnsRecord, 'true']
+
+Resources:
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      VersioningConfiguration: { Status: Enabled }
+      # Cost guardrail: versioning enables rollback, but old versions expire after 30 days
+      # so storage can't grow unbounded. Multipart fragments are aborted after 7 days.
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortFragments
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${DomainName}-oac'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontOAC
+            Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub '${SiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
+  ResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub '${DomainName}-security-headers'
+        SecurityHeadersConfig:
+          StrictTransportSecurity: { Override: true, IncludeSubdomains: true, Preload: true, AccessControlMaxAgeSec: 63072000 }
+          ContentSecurityPolicy: { Override: true, ContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'" }
+          XContentTypeOptions: { Override: true }
+          ReferrerPolicy: { Override: true, ReferrerPolicy: strict-origin-when-cross-origin }
+          FrameOptions: { Override: true, FrameOption: DENY }
+
+  # Edge negotiation for pre-compressed variants (.zst/.br/.gz). CloudFront has no
+  # Brotli/zstd auto-compress, so the build ships all variants and this function picks
+  # the smallest the client accepts. Cost: $0.10 per 1M invocations (~$0.001 at 10k views).
+  # Typical saving vs identity: 70-85% fewer text bytes transferred.
+  EncodingFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub '${DomainName}-encoding'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: 'Serve pre-compressed .zst/.br/.gz variants + directory index pages.'
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var req = event.request;
+          var uri = req.uri;
+          if (uri.charAt(uri.length - 1) === '/') { uri += 'index.html'; req.uri = uri; }
+          var h = req.headers['accept-encoding'];
+          var ae = h ? h.value : '';
+          // Mirror of the build's shouldCompress(): html css js xml json txt svg webmanifest
+          var compressible = /\.(html|css|js|xml|json|txt|svg|webmanifest)$/i.test(uri);
+          var enc = '';
+          if (compressible) {
+            if (/\bzstd\b/.test(ae)) enc = 'zst';
+            else if (/\bbr\b/.test(ae)) enc = 'br';
+            else if (/\bgzip\b/.test(ae)) enc = 'gz';
+          }
+          // Normalise so the cache key holds at most 4 variants per URL.
+          req.headers['accept-encoding'] = { value: enc === 'gz' ? 'gzip' : (enc || 'identity') };
+          if (enc) req.uri = uri + '.' + enc;
+          return req;
+        }
+
+  # Cache key varies on the NORMALISED Accept-Encoding (set by the function above),
+  # so zstd/brotli/gzip/identity each cache separately. TTLs mirror the deployer's
+  # Cache-Control mapping: short for HTML, immutable for fingerprinted assets.
+  EncodingCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub '${DomainName}-encoding'
+        MinTTL: 0
+        DefaultTTL: 300
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: false
+          EnableAcceptEncodingBrotli: false
+          HeadersConfig: { HeaderBehavior: whitelist, Headers: [Accept-Encoding] }
+          CookiesConfig: { CookieBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Aliases: [!Ref DomainName]
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: !Ref PriceClass
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            S3OriginConfig: { OriginAccessIdentity: '' }
+            OriginAccessControlId: !Ref OriginAccessControl
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: !Ref EncodingCachePolicy
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3cf6  # CORS-S3Origin
+          ResponseHeadersPolicyId: !Ref ResponseHeadersPolicy
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt EncodingFunction.FunctionMetadata.FunctionARN
+        CacheBehaviors:
+          - PathPattern: /assets/*
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref EncodingCachePolicy
+            ResponseHeadersPolicyId: !Ref ResponseHeadersPolicy
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt EncodingFunction.FunctionMetadata.FunctionARN
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponsePagePath: /404.html
+            ResponseCode: 404
+            ErrorCachingMinTTL: 300
+          - ErrorCode: 404
+            ResponsePagePath: /404.html
+            ResponseCode: 404
+            ErrorCachingMinTTL: 300
+        WebACLId: !If [UseWAF, !Ref WebACL, !Ref 'AWS::NoValue']
+
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Condition: UseWAF
+    Properties:
+      Scope: CLOUDFRONT
+      DefaultAction: { Allow: {} }
+      VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: ayodhyya-waf }
+      Rules:
+        - Name: AWSManagedCommon
+          Priority: 1
+          OverrideAction: { None: {} }
+          VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: common }
+          Statement:
+            ManagedRuleGroupStatement: { VendorName: AWS, Name: AWSManagedRulesCommonRuleSet }
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateDns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront global zone
+        DNSName: !GetAtt Distribution.DomainName
+
+Outputs:
+  BucketName: { Value: !Ref SiteBucket }
+  DistributionId: { Value: !Ref Distribution }
+  DistributionDomain: { Value: !GetAtt Distribution.DomainName }

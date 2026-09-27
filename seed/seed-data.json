@@ -1,0 +1,325 @@
+{
+  "sites": [
+    {
+      "id": "site_ayodhyya",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-25T10:00:00.000Z",
+      "version": 3,
+      "status": "Active",
+      "name": "Ayodhyya",
+      "tagline": "Build fast, serverless websites",
+      "domain": "www.ayodhyya.com",
+      "url": "https://www.ayodhyya.com",
+      "language": "en",
+      "description": "Ayodhyya — practical guides on serverless, AWS, and static-first publishing.",
+      "logo": "",
+      "theme": {
+        "colorPrimary": "#0f172a",
+        "colorAccent": "#f59e0b",
+        "fontBody": "system-ui",
+        "fontHeading": "system-ui",
+        "layoutWidth": "72rem",
+        "mode": "light"
+      },
+      "navigation": {
+        "header": [
+          "Home",
+          "About",
+          "Contact",
+          "Search"
+        ],
+        "footer": [
+          "Privacy",
+          "Terms",
+          "RSS"
+        ]
+      },
+      "seo": {
+        "titleSuffix": "— Ayodhyya",
+        "defaultDescription": "Practical serverless and static-site guides.",
+        "robots": "index,follow",
+        "canonicalBase": "https://www.ayodhyya.com"
+      },
+      "social": {
+        "twitter": "https://x.com/ayodhyya",
+        "facebook": "",
+        "linkedin": "",
+        "whatsapp": "",
+        "telegram": ""
+      },
+      "adsense": {
+        "publisherId": "",
+        "slots": {},
+        "placements": {}
+      },
+      "analytics": {
+        "provider": "none",
+        "measurementId": ""
+      },
+      "privacy": {
+        "privacyPolicy": "",
+        "cookiePolicy": "",
+        "terms": "",
+        "advertisingDisclosure": ""
+      },
+      "redirects": [
+        {
+          "from": "/articles/old-slug/",
+          "to": "/articles/aws-lambda-guide/",
+          "code": 301
+        }
+      ],
+      "activeTemplateId": "tpl_default_v1"
+    },
+    {
+      "id": "site_leetcode",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-25T10:00:00.000Z",
+      "version": 1,
+      "status": "Active",
+      "name": "Ayodhyya LeetCode",
+      "tagline": "Coding practice notes",
+      "domain": "leetcode.ayodhyya.com",
+      "url": "https://leetcode.ayodhyya.com",
+      "language": "en",
+      "description": "LeetCode problem walkthroughs.",
+      "theme": {
+        "colorPrimary": "#0f172a",
+        "colorAccent": "#22c55e",
+        "fontBody": "system-ui",
+        "fontHeading": "system-ui",
+        "layoutWidth": "72rem",
+        "mode": "light"
+      },
+      "navigation": {
+        "header": [
+          "Home",
+          "Search"
+        ],
+        "footer": [
+          "RSS"
+        ]
+      },
+      "seo": {
+        "defaultDescription": "LeetCode walkthroughs.",
+        "robots": "index,follow"
+      },
+      "social": {},
+      "adsense": {
+        "publisherId": "",
+        "slots": {},
+        "placements": {}
+      },
+      "analytics": {
+        "provider": "none"
+      },
+      "privacy": {},
+      "redirects": [],
+      "activeTemplateId": "tpl_default_v1"
+    }
+  ],
+  "authors": [
+    {
+      "id": "auth_1",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-01T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "name": "Ayodhyya Team",
+      "slug": "ayodhyya-team",
+      "bio": "Writers and builders.",
+      "avatar": "",
+      "role": "Editor"
+    }
+  ],
+  "categories": [
+    {
+      "id": "cat_aws",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-01T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "name": "AWS",
+      "slug": "aws",
+      "description": "AWS serverless guides."
+    },
+    {
+      "id": "cat_web",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-01T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "name": "Web",
+      "slug": "web",
+      "description": "Static-first web publishing."
+    }
+  ],
+  "tags": [
+    {
+      "id": "tag_serverless",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-01T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "name": "serverless",
+      "slug": "serverless"
+    },
+    {
+      "id": "tag_seo",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-01T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "name": "seo",
+      "slug": "seo"
+    }
+  ],
+  "articles": [
+    {
+      "id": "art_draft",
+      "createdAt": "2026-09-25T09:00:00.000Z",
+      "updatedAt": "2026-09-26T06:20:14.700Z",
+      "version": 1,
+      "status": "Draft",
+      "siteId": "site_ayodhyya",
+      "title": "Draft: Core Web Vitals for Static Blogs",
+      "slug": "core-web-vitals-draft",
+      "excerpt": "Work in progress.",
+      "content": "<p>Draft content — images, fonts, and third-party scripts dominate LCP. Keep them minimal.</p>",
+      "contentFormat": "html",
+      "featuredImage": "",
+      "authorId": "auth_1",
+      "categoryIds": [
+        "cat_web"
+      ],
+      "tagIds": [
+        "tag_seo"
+      ],
+      "publishDate": "",
+      "modifiedDate": "",
+      "canonicalUrl": "",
+      "metaTitle": "",
+      "metaDescription": "",
+      "keywords": [],
+      "robots": "",
+      "ogTitle": "",
+      "ogDescription": "",
+      "ogImage": "",
+      "twitterTitle": "",
+      "twitterDescription": "",
+      "twitterImage": "",
+      "schemaType": "BlogPosting",
+      "readingTime": 1,
+      "wordCount": 15,
+      "revision": 1,
+      "lastDeployedRevision": 1
+    },
+    {
+      "id": "art_lambda",
+      "createdAt": "2026-09-10T00:00:00.000Z",
+      "updatedAt": "2026-09-24T00:00:00.000Z",
+      "version": 4,
+      "status": "Published",
+      "siteId": "site_ayodhyya",
+      "title": "AWS Lambda Guide: Static Sites Without Servers",
+      "slug": "aws-lambda-guide",
+      "excerpt": "Serve a fast static website from S3 + CloudFront and use Lambda only where you truly need compute.",
+      "content": "<h2>Why static first</h2><p>CloudFront serves cached HTML directly. No application server, no database round-trip.</p><h2>Where Lambda fits</h2><ul><li>Deployment callbacks</li><li>Contact forms</li><li>Preview auth</li></ul><p>Read the <a href=\"/about/\">about page</a> for context.</p>",
+      "contentFormat": "html",
+      "featuredImage": "",
+      "authorId": "auth_1",
+      "categoryIds": [
+        "cat_aws"
+      ],
+      "tagIds": [
+        "tag_serverless"
+      ],
+      "publishDate": "2026-09-12T00:00:00.000Z",
+      "modifiedDate": "2026-09-24T00:00:00.000Z",
+      "canonicalUrl": "",
+      "metaTitle": "AWS Lambda Guide: Static Sites Without Servers",
+      "metaDescription": "Serve a fast static website from S3 + CloudFront; use Lambda only for dynamic gaps.",
+      "keywords": [
+        "aws",
+        "lambda",
+        "serverless"
+      ],
+      "robots": "",
+      "ogTitle": "",
+      "ogDescription": "",
+      "ogImage": "",
+      "twitterTitle": "",
+      "twitterDescription": "",
+      "twitterImage": "",
+      "schemaType": "BlogPosting",
+      "readingTime": 2,
+      "wordCount": 60,
+      "revision": 4,
+      "lastDeployedRevision": 4
+    }
+  ],
+  "pages": [
+    {
+      "id": "page_about",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-20T00:00:00.000Z",
+      "version": 2,
+      "siteId": "site_ayodhyya",
+      "title": "About",
+      "slug": "about",
+      "content": "<p>Ayodhyya is a lightweight offline-first publishing studio. Write locally, preview locally, publish once.</p>",
+      "contentFormat": "html",
+      "status": "Published",
+      "metaTitle": "About — Ayodhyya",
+      "metaDescription": "About Ayodhyya publishing studio.",
+      "canonicalUrl": "",
+      "revision": 2,
+      "lastDeployedRevision": 2
+    },
+    {
+      "id": "page_contact",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-20T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "title": "Contact",
+      "slug": "contact",
+      "content": "<p>Contact us at hello@example.com.</p>",
+      "contentFormat": "html",
+      "status": "Published",
+      "metaTitle": "",
+      "metaDescription": "",
+      "canonicalUrl": "",
+      "revision": 1,
+      "lastDeployedRevision": 1
+    },
+    {
+      "id": "page_privacy",
+      "createdAt": "2026-09-01T00:00:00.000Z",
+      "updatedAt": "2026-09-20T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "title": "Privacy Policy",
+      "slug": "privacy-policy",
+      "content": "<p>Sample privacy policy. Replace with jurisdiction-specific content before publishing with ads.</p>",
+      "contentFormat": "html",
+      "status": "Published",
+      "metaTitle": "",
+      "metaDescription": "",
+      "canonicalUrl": "",
+      "revision": 1,
+      "lastDeployedRevision": 1
+    }
+  ],
+  "media": [],
+  "templates": [],
+  "deployments": [],
+  "deploymentProfile": {
+    "siteId": "site_ayodhyya",
+    "domain": "www.ayodhyya.com",
+    "bucket": "ayodhyya-prod-site",
+    "distributionId": "E1234567890ABC",
+    "region": "ap-south-1",
+    "strategy": "atomic-s3-cloudfront"
+  }
+}

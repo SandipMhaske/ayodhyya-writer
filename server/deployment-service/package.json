@@ -1,0 +1,7 @@
+{
+  "name": "ayodhyya-deploy-service",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Protected backend for Ayodhyya Writer AWS deployments (holds credentials; browser never does)",
+  "scripts": { "start": "node server.js" }
+}

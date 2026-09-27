@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.DS_Store
+Thumbs.db
+.env
+.env.local
+*.local
+backups/
+data/
+!data/.gitkeep
+uploads/private/
+*.log
+coverage/
+.aws/
+deploy-manifest.local.json
+deployment-profile.local.json

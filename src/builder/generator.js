@@ -1,0 +1,197 @@
+// Static site generator — pure, testable without a browser.
+// Input: { site, articles, pages, categories, tags, authors, media, template, deploymentProfile }
+// Output: Map<outputPath, content> with clean URLs + SEO + feeds + search index + redirects.
+import { sanitizeHtml } from '../security/sanitize.js';
+import { renderTemplate } from '../templates/engine.js';
+import { seoHead, articleJsonLd, websiteJsonLd, breadcrumbJsonLd, buildSitemap, buildSitemapIndex, paginateSitemap, buildRss, buildRobots, canonicalFor } from '../seo/seo.js';
+import { markdownToHtml } from '../core/utils/markdown.js';
+import { escapeHtml, hashContent, stripTags } from '../core/utils/utils.js';
+import { minifyHtml, minifyCss, minifyJs, fingerprintName } from '../optimizer/optimizer.js';
+import { securityHeaders } from '../security/uploads.js';
+
+export function articleBody(article) {
+  const raw = article.contentFormat === 'markdown' ? markdownToHtml(article.content) : String(article.content || '');
+  return sanitizeHtml(raw);
+}
+
+function adsenseHead(site) {
+  const pub = site?.adsense?.publisherId;
+  if (!pub) return '';
+  return `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${escapeHtml(pub)}" crossorigin="anonymous"></script>`;
+}
+
+function adsenseBlock(site, placement) {
+  const slot = site?.adsense?.slots?.[placement] || site?.adsense?.slots?.[site?.adsense?.placements?.[placement]];
+  if (!site?.adsense?.publisherId || !slot) return '';
+  return `<ins class="adsbygoogle" style="display:block" data-ad-client="${escapeHtml(site.adsense.publisherId)}" data-ad-slot="${escapeHtml(slot)}" data-ad-format="auto" data-full-width-responsive="true"></ins><script>(adsbygoogle=window.adsbygoogle||[]).push({});</script>`;
+}
+
+export function buildSearchIndex({ articles }) {
+  return (articles || [])
+    .filter((a) => a.status === 'Published' || a.status === 'Modified')
+    .map((a) => ({
+      title: a.title, slug: a.slug, excerpt: a.excerpt || '',
+      content: stripTags(articleBody(a)).slice(0, 5000),
+      category: (a.categoryIds || [])[0] || '', tags: a.tagIds || [], date: a.publishDate || a.createdAt,
+    }));
+}
+
+export async function generateSite(input, { sitemapPerPage, now } = {}) {
+  const { site, articles = [], pages = [], categories = [], tags = [], authors = [], template } = input;
+  const files = new Map(); // path -> string
+  const tpl = template?.files || {};
+  const css = tpl['style.css'] ? minifyCss(tpl['style.css']) : '';
+  const js = tpl['script.js'] ? minifyJs(tpl['script.js']) : '';
+  const cssName = css ? fingerprintName('style.css', css) : null;
+  const jsName = js ? fingerprintName('app.js', js) : null;
+  if (cssName) files.set(`assets/css/${cssName}`, css);
+  if (jsName) files.set(`assets/js/${jsName}`, js);
+
+  const authorById = new Map(authors.map((a) => [a.id, a]));
+  const catById = new Map(categories.map((c) => [c.id, c]));
+  // Scheduled articles whose publish date has passed go live automatically at build time.
+  const at = now ? new Date(now).getTime() : Date.now();
+  const isLive = (a) => ['Published', 'Modified'].includes(a.status) ||
+    (a.status === 'Scheduled' && a.publishDate && !Number.isNaN(Date.parse(a.publishDate)) && Date.parse(a.publishDate) <= at);
+  const published = articles.filter(isLive)
+    .sort((a, b) => String(b.publishDate || b.createdAt).localeCompare(String(a.publishDate || a.createdAt)));
+
+  const baseCtx = (extra = {}) => ({
+    site: { name: site.name, description: site.description || site.tagline, url: site.url, tagline: site.tagline },
+    ...extra,
+  });
+  const layout = (tplName, ctx) => renderTemplate(tpl[tplName] || '{{{content}}}', ctx);
+
+  const cssLink = cssName ? `<link rel="stylesheet" href="/assets/css/${cssName}">` : '';
+  const jsTag = jsName ? `<script src="/assets/js/${jsName}" defer></script>` : '';
+
+  // Homepage
+  {
+    const cards = published.slice(0, 20).map((a) =>
+      `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p></article>`).join('\n');
+    const url = canonicalFor(site.url, '/');
+    const head = seoHead({ site, title: `${site.name} — ${site.tagline || ''}`.trim(), description: site.seo?.defaultDescription || site.description, canonical: url, jsonldObjects: [websiteJsonLd({ site })], extra: `${cssLink}\n${adsenseHead(site)}` });
+    const body = layout('index.html', baseCtx({ page: { title: site.name }, content: cards, 'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name }));
+    files.set('index.html', minifyHtml(injectHead(body, head, jsTag)));
+  }
+
+  // Articles
+  const sitemapUrls = [{ loc: canonicalFor(site.url, '/'), lastmod: isoDate(site.updatedAt) }];
+  for (const a of published) {
+    const author = authorById.get(a.authorId);
+    const cat = catById.get((a.categoryIds || [])[0]);
+    const url = canonicalFor(site.url, `/articles/${a.slug}/`);
+    const bodyHtml = articleBody(a);
+    const head = seoHead({
+      site,
+      title: a.metaTitle || a.title,
+      description: a.metaDescription || a.excerpt,
+      canonical: a.canonicalUrl || url,
+      robots: a.robots,
+      og: { type: 'article', title: a.ogTitle || a.title, description: a.ogDescription || a.excerpt, image: a.ogImage || a.featuredImage, url },
+      twitter: { card: 'summary_large_image', title: a.twitterTitle || a.title, description: a.twitterDescription || a.excerpt, image: a.twitterImage || a.featuredImage },
+      jsonldObjects: [
+        articleJsonLd({ site, article: a, author, url }),
+        breadcrumbJsonLd([{ name: 'Home', url: canonicalFor(site.url, '/') }, ...(cat ? [{ name: cat.name, url: canonicalFor(site.url, `/category/${cat.slug}/`) }] : []), { name: a.title, url }]),
+      ],
+      extra: `${cssLink}\n${adsenseHead(site)}`,
+    });
+    const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}`;
+    const ctx = baseCtx({
+      article: { title: a.title, content, author: author?.name || '', date: a.publishDate || a.createdAt, excerpt: a.excerpt },
+      page: { title: a.title, content },
+      content,
+      'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name,
+    });
+    files.set(`articles/${a.slug}/index.html`, minifyHtml(injectHead(layout('article.html', ctx), head, jsTag)));
+    sitemapUrls.push({ loc: url, lastmod: isoDate(a.modifiedDate || a.updatedAt) });
+  }
+
+  // Category / tag pages
+  for (const c of categories) {
+    const list = published.filter((a) => (a.categoryIds || []).includes(c.id));
+    const url = canonicalFor(site.url, `/category/${c.slug}/`);
+    const head = seoHead({ site, title: `${c.name} — ${site.name}`, description: c.description, canonical: url, extra: cssLink });
+    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2></article>`).join('\n');
+    files.set(`category/${c.slug}/index.html`, minifyHtml(injectHead(layout('category.html', baseCtx({ page: { title: c.name }, content: cards, category: c, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+    sitemapUrls.push({ loc: url, lastmod: isoDate(c.updatedAt) });
+  }
+  for (const t of tags) {
+    const list = published.filter((a) => (a.tagIds || []).includes(t.id));
+    const url = canonicalFor(site.url, `/tag/${t.slug}/`);
+    const head = seoHead({ site, title: `${t.name} — ${site.name}`, canonical: url, extra: cssLink });
+    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2></article>`).join('\n');
+    files.set(`tag/${t.slug}/index.html`, minifyHtml(injectHead(layout('tag.html', baseCtx({ page: { title: t.name }, content: cards, tag: t, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+  }
+
+  // Static pages (about/contact/privacy/...)
+  for (const p of pages.filter((p) => p.status === 'Published' || p.status === 'Modified')) {
+    const url = canonicalFor(site.url, `/${p.slug}/`);
+    const head = seoHead({ site, title: p.metaTitle || p.title, description: p.metaDescription, canonical: p.canonicalUrl || url, extra: cssLink });
+    const body = sanitizeHtml(p.contentFormat === 'markdown' ? markdownToHtml(p.content) : p.content);
+    files.set(`${p.slug}/index.html`, minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: p.title, content: body }, content: body, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+    sitemapUrls.push({ loc: url, lastmod: isoDate(p.updatedAt) });
+  }
+
+  // Search page + index
+  {
+    const head = seoHead({ site, title: `Search — ${site.name}`, canonical: canonicalFor(site.url, '/search/'), robots: 'noindex,follow', extra: cssLink });
+    files.set('search/index.html', minifyHtml(injectHead(layout('search.html', baseCtx({ page: { title: 'Search' }, content: '', 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+    files.set('search-index.json', JSON.stringify(buildSearchIndex({ articles })));
+  }
+
+  // 404
+  {
+    const head = seoHead({ site, title: `Not found — ${site.name}`, robots: 'noindex,nofollow', extra: cssLink });
+    files.set('404.html', minifyHtml(injectHead(layout('404.html', baseCtx({ page: { title: 'Not found' }, content: '<p>Page not found.</p>', 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+  }
+
+  // Feeds + robots + manifest + headers
+  // Sitemap: single file for small sites, paginated pages + index once large.
+  const sitemapPages = paginateSitemap(sitemapUrls, sitemapPerPage);
+  for (const page of sitemapPages) files.set(page.name, buildSitemap(page.urls));
+  if (sitemapPages.some((p) => p.index)) files.set('sitemap.xml', buildSitemapIndex(site.url, sitemapPages));
+  files.set('rss.xml', buildRss({ site, articles: published }));
+  files.set('robots.txt', buildRobots({ site, production: true }));
+  files.set('manifest.webmanifest', JSON.stringify({ name: site.name, short_name: site.name, start_url: '/', display: 'standalone' }));
+  files.set('_headers.json', JSON.stringify(securityHeaders({ adsense: !!site?.adsense?.publisherId }), null, 2));
+  // Redirect manifest for slug changes (CloudFront Functions / S3 routing compatible JSON)
+  const redirects = (site.redirects || []).filter((r) => r?.from && r?.to);
+  files.set('redirects.json', JSON.stringify(redirects, null, 2));
+
+  const contentHash = hashContent([...files.entries()].map(([p, c]) => `${p}:${typeof c === 'string' ? c.length : 0}:${fnvSafe(c)}`));
+  return { files, contentHash, sitemapUrls, publishedCount: published.length };
+}
+
+function fnvSafe(s) {
+  let h = 0x811c9dc5;
+  const str = typeof s === 'string' ? s : JSON.stringify(s);
+  const n = Math.min(str.length, 20000);
+  for (let i = 0; i < n; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16);
+}
+
+function injectHead(html, head, jsTag) {
+  let s = String(html ?? '');
+  if (s.includes('</head>')) return s.replace('</head>', `${head}\n${jsTag}\n</head>`);
+  return `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n${head}\n${jsTag}\n</head><body>${s}</body>`;
+}
+
+function isoDate(d) {
+  try { return new Date(d || Date.now()).toISOString().slice(0, 10); } catch { return new Date().toISOString().slice(0, 10); }
+}
+
+// Incremental build manifest: only rebuild/upload what changed.
+export function diffManifest(prev, next) {
+  // prev/next: { contentHash, files: Map } — compare per-file hashes.
+  const changed = [];
+  const prevMap = prev?.hashes || {};
+  const nextHashes = {};
+  for (const [p, c] of next.files) {
+    const h = fnvSafe(typeof c === 'string' ? c.slice(0, 20000) + c.length : c);
+    nextHashes[p] = h;
+    if (prevMap[p] !== h) changed.push(p);
+  }
+  const removed = Object.keys(prevMap).filter((p) => !next.files.has(p));
+  return { changed, removed, nextHashes, fullRebuild: !prev };
+}

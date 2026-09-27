@@ -1,0 +1,6 @@
+{
+  "name": "Default",
+  "versionTag": "v1",
+  "description": "Clean, fast, mobile-first default template. Minimal JS, semantic HTML, WCAG-aware.",
+  "files": ["index.html", "article.html", "category.html", "tag.html", "search.html", "page.html", "404.html", "style.css", "script.js"]
+}

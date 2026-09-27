@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ayodhyya Writer — offline-first publishing studio</title>
+<meta name="description" content="Write offline, preview locally, publish a fast static website to AWS with one click.">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/css/app.css">
+<meta name="theme-color" content="#0f172a">
+</head>
+<body>
+<a class="skip" href="#view">Skip to content</a>
+<div id="app">
+  <aside id="sidebar" aria-label="Primary">
+    <div class="brand">Ayodhyya <span>Writer</span></div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <div id="netstat" role="status" aria-live="polite"><span class="dot"></span><span class="lbl">Checking…</span></div>
+      <div id="pending" aria-live="polite"></div>
+    </div>
+  </aside>
+  <div id="main-col">
+    <header id="topbar">
+      <button id="menu-btn" aria-label="Toggle navigation" aria-expanded="true">☰</button>
+      <div id="crumb">Dashboard</div>
+      <div class="top-actions">
+        <button id="btn-preview" class="btn ghost" title="Preview (Ctrl/Cmd+P)">Preview</button>
+        <button id="btn-build" class="btn ghost" title="Build static site">Build</button>
+        <button id="btn-publish" class="btn primary" title="Publish website (Ctrl/Cmd+Shift+P)">Publish website</button>
+      </div>
+    </header>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<dialog id="modal"><div id="modal-body"></div></dialog>
+<noscript><p style="padding:2rem">Ayodhyya Writer needs JavaScript for the editor. The generated public website works without it.</p></noscript>
+<script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>
