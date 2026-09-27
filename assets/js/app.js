@@ -14,6 +14,7 @@ import { buildDeploymentManifest } from '../../src/deployment/providers.js';
 import { inlineAssets, blobTypeFor, previewInterceptorScript, PREVIEW_MAP_KEY } from '../../src/preview/inline.js';
 import { analyzeSeo } from '../../src/seo/analyzer.js';
 import { fetchArticle } from '../../src/core/utils/fetchArticle.js';
+import { diffRevision, renderDiff } from '../../src/core/utils/diff.js';
 import { downloadImages } from '../../src/media/importImages.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -313,6 +314,7 @@ async function vArticleEdit(id) {
       <div class="row"><button class="btn primary" type="submit">Save</button><span id="autosave" aria-live="polite"></span></div>
     </form>
     <h2>Revision history</h2>
+    <div class="row"><label>Compare<select id="cmp-from">${revs.sort((x, y) => y.revision - x.revision).map((r) => `<option value="${r.revision}">v${r.revision} — ${escapeHtml((r.createdAt || '').slice(0, 16).replace('T', ' '))}</option>`).join('')}</select></label><span>→</span><label>with<select id="cmp-to">${revs.sort((x, y) => y.revision - x.revision).map((r) => `<option value="${r.revision}">v${r.revision} — ${escapeHtml((r.createdAt || '').slice(0, 16).replace('T', ' '))}</option>`).join('')}</select></label><button class="btn" id="cmp-go">Compare</button></div>
     <table><thead><tr><th>Rev</th><th>When</th><th>Note</th><th></th></tr></thead><tbody>
       ${revs.sort((x, y) => y.revision - x.revision).map((r) => `<tr><td>v${r.revision}</td><td>${escapeHtml((r.createdAt || '').slice(0, 16).replace('T', ' '))}</td><td>${escapeHtml(r.note || '')}</td><td><button class="btn" data-restore="${r.revision}">Restore</button></td></tr>`).join('') || '<tr><td colspan="4">No revisions yet.</td></tr>'}
     </tbody></table>`;
@@ -404,6 +406,15 @@ async function vArticleEdit(id) {
     toast('Restored revision v' + rev.revision);
     route();
   }));
+  const cmpGo = $('#cmp-go');
+  if (cmpGo) cmpGo.onclick = () => {
+    const from = revs.find((r) => String(r.revision) === $('#cmp-from').value);
+    const to = revs.find((r) => String(r.revision) === $('#cmp-to').value);
+    if (!from?.snapshot || !to?.snapshot) { toast('Pick two revisions with snapshots.'); return; }
+    if (from.revision === to.revision) { toast('Pick two different revisions.'); return; }
+    const r = diffRevision(from.snapshot.content || '', to.snapshot.content || '');
+    modal(`<h2>Compare v${from.revision} → v${to.revision}</h2><p>+${r.added} words / −${r.removed} words${r.capped ? ' (large change shown as blocks)' : ''}</p><div class="preview-pane" style="max-height:50vh;overflow:auto">${renderDiff(r.segments) || '<p>No differences.</p>'}</div>`);
+  };
 }
 async function saveEditing() {
   const f = $('#f');
