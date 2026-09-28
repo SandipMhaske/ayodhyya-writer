@@ -29,6 +29,8 @@ export function createSite(partial = {}) {
     seo: { titleSuffix: '', defaultDescription: '', robots: 'index,follow', canonicalBase: '' },
     social: { twitter: '', facebook: '', linkedin: '', whatsapp: '', telegram: '' },
     adsense: { publisherId: '', slots: {}, placements: {} },
+    comments: { enabled: false, endpoint: '', heading: 'Comments' },
+    newsletter: { enabled: false, endpoint: '', heading: 'Newsletter', text: '' },
     analytics: { provider: 'none', measurementId: '' },
     privacy: { privacyPolicy: '', cookiePolicy: '', terms: '', advertisingDisclosure: '' },
     redirects: [],
@@ -117,6 +119,18 @@ export function createMedia(partial = {}) {
   return {
     ...base('media'), siteId: '', filename: '', originalName: '', mimeType: '', size: 0,
     width: 0, height: 0, altText: '', caption: '', title: '', hash: '', variants: [], dataUrl: '', ...partial,
+  };
+}
+export function createComment(partial = {}) {
+  return {
+    ...base('comment'), siteId: '', articleSlug: '', author: '', content: '',
+    status: 'Pending', ...partial, // Pending | Approved | Spam
+  };
+}
+export function createSubscriber(partial = {}) {
+  return {
+    ...base('subscriber'), siteId: '', email: '', name: '', source: 'site-form',
+    status: 'Active', ...partial, // Active | Unsubscribed
   };
 }
 export function createTemplate(partial = {}) {

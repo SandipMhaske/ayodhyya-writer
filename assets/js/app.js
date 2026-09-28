@@ -1,10 +1,10 @@
 // Ayodhyya Writer admin UI — vanilla JS, offline-first, zero dependencies.
 // CONTENT=DATA (sanitized), TEMPLATES=CODE (trusted), AWS=INFRA (backend), CREDENTIALS=SECRETS (never here).
-import { escapeHtml, slugify, wordCountOf, readingTimeMinutes } from '../../src/core/utils/utils.js';
+import { escapeHtml, slugify, wordCountOf, readingTimeMinutes, stripTags } from '../../src/core/utils/utils.js';
 import { AWS_REGIONS, validateBucket, validateRegion, validateDomain, validateDistributionId, validateAcmArn, validateAccountId, validateHostedZoneId, defaultBucketFor, buildProfile, cfnDeployCommand } from '../../src/core/utils/awsWizard.js';
 import { markdownToHtml, htmlToMarkdown } from '../../src/core/utils/markdown.js';
 import { ARTICLE_STATUSES } from '../../src/core/models/models.js';
-import { ArticleService, PageService, TaxonomyService, AuthorService, MediaService, TemplateService, SearchService, BackupService, AuditService } from '../../src/core/services/services.js';
+import { ArticleService, PageService, TaxonomyService, AuthorService, MediaService, TemplateService, SearchService, BackupService, AuditService, CommentService, SubscriberService } from '../../src/core/services/services.js';
 import { createRepository } from '../../src/storage/repository.js';
 import { sanitizeHtml } from '../../src/security/sanitize.js';
 import { validateUpload, normalizeFilename, scanForSecrets } from '../../src/security/uploads.js';
@@ -111,7 +111,7 @@ async function activeTemplate() {
   return (s?.activeTemplateId && (await state.repo.get('templates', s.activeTemplateId))) || (await state.repo.all('templates'))[0];
 }
 async function fullInput() {
-  const [s, articles, pages, categories, tags, authors, media, t] = await Promise.all([
+  const [s, articles, pages, categories, tags, authors, media, comments, t] = await Promise.all([
     site(),
     state.repo.query('articles', (a) => a.siteId === state.siteId),
     state.repo.query('pages', (p) => p.siteId === state.siteId),
@@ -119,9 +119,10 @@ async function fullInput() {
     state.repo.query('tags', (t) => t.siteId === state.siteId),
     state.repo.query('authors', (a) => a.siteId === state.siteId),
     state.repo.all('media'),
+    state.repo.query('comments', (c) => c.siteId === state.siteId),
     activeTemplate(),
   ]);
-  return { site: s, articles, pages, categories, tags, authors, media, template: t };
+  return { site: s, articles, pages, categories, tags, authors, media, comments, template: t };
 }
 
 /* ---------- router ---------- */
@@ -154,16 +155,21 @@ async function route() {
 
 /* ---------- dashboard ---------- */
 async function vDashboard() {
-  const [articles, pages, media, deployments, s] = await Promise.all([
+  const [articles, pages, media, deployments, s, comments, subs] = await Promise.all([
     state.repo.query('articles', (a) => a.siteId === state.siteId),
     state.repo.query('pages', (p) => p.siteId === state.siteId),
     state.repo.all('media'),
     state.repo.all('deployments'),
     site(),
+    state.repo.query('comments', (c) => c.siteId === state.siteId),
+    state.repo.query('subscribers', (x) => x.siteId === state.siteId && x.status === 'Active'),
   ]);
   const drafts = articles.filter((a) => a.status === 'Draft').length;
   const modified = articles.filter((a) => a.status === 'Modified').length;
   const published = articles.filter((a) => ['Published', 'Modified'].includes(a.status)).length;
+  const scheduled = articles.filter((a) => a.status === 'Scheduled').sort((a, b) => String(a.publishDate).localeCompare(String(b.publishDate)));
+  const dueCount = scheduled.filter((a) => a.publishDate && Date.parse(a.publishDate) <= Date.now()).length;
+  const pendingComments = comments.filter((c) => c.status === 'Pending').length;
   const pending = await ArticleService.pendingChanges(state.repo, state.siteId);
   const lastDep = deployments.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
   const health = validateSiteHealth({ articles, pages, media, deploymentProfile: JSON.parse(localStorage.getItem('aw.deployProfile') || 'null') });
@@ -177,6 +183,8 @@ async function vDashboard() {
       <div class="card"><h3>Last deployment</h3><div class="big" style="font-size:1.1rem">${lastDep ? escapeHtml(lastDep.version) : '—'}</div><div>${lastDep ? escapeHtml(lastDep.createdAt) : 'Never published from this device'}</div></div>
       <div class="card"><h3>SEO / Perf / Content</h3><div>SEO ${score(health.seo)} · Perf ${score(health.performance)} · Content ${score(health.content)}</div></div>
       <div class="card"><h3>Pending changes</h3><div class="big">${pending.length}</div><div><button class="btn accent" id="dash-pub">Publish website</button></div></div>
+      <div class="card"><h3>Scheduled posts</h3><div class="big">${scheduled.length}</div><div>${dueCount ? `<span class="status-warn">${dueCount} due — publishes on next build</span>` : scheduled.length ? `Next: ${escapeHtml(scheduled[0].title)} (${escapeHtml((scheduled[0].publishDate || '').slice(0, 10))})` : 'None scheduled'}</div></div>
+      <div class="card"><h3>Engagement</h3><div>${pendingComments} comment(s) awaiting moderation · ${subs.length} subscriber(s)</div><div><a href="#/organize">Moderate</a></div></div>
     </div>
     <h2>Search content (offline)</h2>
     <form id="dash-search" class="row"><input id="dq" placeholder="Search title, excerpt, content…" aria-label="Search content"><button class="btn">Search</button></form>
@@ -488,15 +496,23 @@ async function vMedia() {
 
 /* ---------- organize ---------- */
 async function vOrganize() {
-  const [cats, tags, authors] = await Promise.all([
+  const [cats, tags, authors, comments, subs] = await Promise.all([
     state.repo.query('categories', (c) => c.siteId === state.siteId),
     state.repo.query('tags', (t) => t.siteId === state.siteId),
     state.repo.query('authors', (a) => a.siteId === state.siteId),
+    state.repo.query('comments', (c) => c.siteId === state.siteId),
+    state.repo.query('subscribers', (s) => s.siteId === state.siteId),
   ]);
   const tbl = (rows, kind) => `<table><thead><tr><th>Name</th><th>Slug</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.slug)}</td><td><button class="btn danger" data-del="${kind}:${r.id}">Delete</button></td></tr>`).join('') || '<tr><td colspan="3">None yet.</td></tr>'}</tbody></table>`;
   view.innerHTML = `<h2>Categories</h2><form class="row" id="fc"><input id="fc-n" placeholder="New category" aria-label="New category"><button class="btn">Add</button></form>${tbl(cats, 'cat')}
     <h2>Tags</h2><form class="row" id="ft"><input id="ft-n" placeholder="New tag" aria-label="New tag"><button class="btn">Add</button></form>${tbl(tags, 'tag')}
-    <h2>Authors</h2><form class="row" id="fa"><input id="fa-n" placeholder="New author" aria-label="New author"><button class="btn">Add</button></form>${tbl(authors, 'auth')}`;
+    <h2>Authors</h2><form class="row" id="fa"><input id="fa-n" placeholder="New author" aria-label="New author"><button class="btn">Add</button></form>${tbl(authors, 'auth')}
+    <h2>Comments (moderation)</h2><table><thead><tr><th>Article</th><th>Author</th><th>Comment</th><th>Status</th><th></th></tr></thead><tbody>
+    ${comments.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map((c) => `<tr><td>${escapeHtml(c.articleSlug)}</td><td>${escapeHtml(c.author || '')}</td><td>${stripTags(c.content).slice(0, 80)}</td><td><span class="badge ${c.status === 'Approved' ? 'Published' : c.status === 'Spam' ? 'Archived' : 'Draft'}">${c.status}</span></td><td><span class="row"><button class="btn" data-cappr="${c.id}">Approve</button><button class="btn" data-cspam="${c.id}">Spam</button><button class="btn danger" data-cdel="${c.id}">Delete</button></span></td></tr>`).join('') || '<tr><td colspan="5">No comments yet — enable them under Website, or import some.</td></tr>'}
+    </tbody></table>
+    <h2>Subscribers (${subs.filter((s) => s.status === 'Active').length} active)</h2><table><thead><tr><th>Email</th><th>Name</th><th>Status</th><th></th></tr></thead><tbody>
+    ${subs.map((s) => `<tr><td>${escapeHtml(s.email)}</td><td>${escapeHtml(s.name || '')}</td><td>${s.status}</td><td>${s.status === 'Active' ? `<button class="btn" data-sunsub="${s.id}">Unsubscribe</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="4">No subscribers yet — enable the signup block under Website.</td></tr>'}
+    </tbody></table>`;
   $('#fc').onsubmit = async (e) => { e.preventDefault(); await TaxonomyService.createCategory(state.repo, state.siteId, { name: $('#fc-n').value, slug: slugify($('#fc-n').value) }); route(); };
   $('#ft').onsubmit = async (e) => { e.preventDefault(); await TaxonomyService.createTag(state.repo, state.siteId, { name: $('#ft-n').value, slug: slugify($('#ft-n').value) }); route(); };
   $('#fa').onsubmit = async (e) => { e.preventDefault(); await AuthorService.create(state.repo, state.siteId, { name: $('#fa-n').value, slug: slugify($('#fa-n').value) }); route(); };
@@ -505,6 +521,10 @@ async function vOrganize() {
     await state.repo.remove(kind === 'cat' ? 'categories' : kind === 'tag' ? 'tags' : 'authors', id);
     route();
   }));
+  document.querySelectorAll('[data-cappr]').forEach((b) => (b.onclick = async () => { await CommentService.setStatus(state.repo, b.dataset.cappr, 'Approved'); toast('Comment approved — publishes on next build.'); route(); }));
+  document.querySelectorAll('[data-cspam]').forEach((b) => (b.onclick = async () => { await CommentService.setStatus(state.repo, b.dataset.cspam, 'Spam'); route(); }));
+  document.querySelectorAll('[data-cdel]').forEach((b) => (b.onclick = async () => { await state.repo.remove('comments', b.dataset.cdel); route(); }));
+  document.querySelectorAll('[data-sunsub]').forEach((b) => (b.onclick = async () => { await SubscriberService.setStatus(state.repo, b.dataset.sunsub, 'Unsubscribed'); route(); }));
 }
 
 /* ---------- templates ---------- */
@@ -567,6 +587,15 @@ async function vSite() {
     <h3>Google AdSense (public IDs only — never secrets)</h3>
     <label>Publisher ID (ca-pub-…)<input id="s-pub" value="${escapeHtml(s.adsense?.publisherId || '')}" placeholder="ca-pub-0000000000000000"></label>
     <label>Ad slot — after article<input id="s-slot" value="${escapeHtml(s.adsense?.slots?.['after-article'] || '')}" placeholder="0000000000"></label>
+    <h3>Comments</h3>
+    <label><input type="checkbox" id="s-com-on" ${s.comments?.enabled ? 'checked' : ''}> Enable comments on articles</label>
+    <label>Comment form endpoint (your form service URL — blank shows comments without a form)<input id="s-com-ep" value="${escapeHtml(s.comments?.endpoint || '')}" placeholder="https://forms.example/comments"></label>
+    <h3>Newsletter</h3>
+    <label><input type="checkbox" id="s-nl-on" ${s.newsletter?.enabled ? 'checked' : ''}> Show signup block</label>
+    <label>Signup endpoint (blank shows “opening soon”)<input id="s-nl-ep" value="${escapeHtml(s.newsletter?.endpoint || '')}" placeholder="https://x.example/subscribe"></label>
+    <label>Signup heading<input id="s-nl-h" value="${escapeHtml(s.newsletter?.heading || 'Newsletter')}"></label>
+    <label>Signup text<textarea id="s-nl-t" rows="2">${escapeHtml(s.newsletter?.text || '')}</textarea></label>
+    <div class="row"><button type="button" class="btn" id="sub-csv">Download subscribers CSV</button></div>
     <h3>Redirects (old URL → new URL, keeps SEO juice on slug changes)</h3>
     <div id="red-list"></div>
     <div class="row"><button type="button" class="btn" id="red-add">+ Add redirect</button></div>
@@ -609,10 +638,17 @@ async function vSite() {
       seo: { ...s.seo, defaultDescription: $('#s-seod').value, robots: $('#s-rob').value },
       social: { ...s.social, twitter: $('#s-tw').value, facebook: $('#s-fb').value },
       adsense: { publisherId: $('#s-pub').value.trim(), slots: { ...s.adsense?.slots, 'after-article': $('#s-slot').value.trim() } },
+      comments: { enabled: $('#s-com-on').checked, endpoint: $('#s-com-ep').value.trim(), heading: 'Comments' },
+      newsletter: { enabled: $('#s-nl-on').checked, endpoint: $('#s-nl-ep').value.trim(), heading: $('#s-nl-h').value.trim() || 'Newsletter', text: $('#s-nl-t').value },
       redirects: collected, updatedAt: new Date().toISOString(), version: (s.version || 1) + 1,
     });
     await AuditService.log(state.repo, { action: 'site.update', entityType: 'site', entityId: s.id, detail: s.name });
     toast('Website saved locally.');
+  };
+  $('#sub-csv').onclick = async () => {
+    const subs = await state.repo.query('subscribers', (x) => x.siteId === state.siteId);
+    download(`subscribers-${state.siteId}.csv`, SubscriberService.toCsv(subs), 'text/csv');
+    toast(`Exported ${subs.length} subscriber(s). Take the CSV to any email provider.`);
   };
   $('#df').onsubmit = async (e) => {
     e.preventDefault();

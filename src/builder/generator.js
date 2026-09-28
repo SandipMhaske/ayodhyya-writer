@@ -9,6 +9,28 @@ import { escapeHtml, hashContent, stripTags } from '../core/utils/utils.js';
 import { minifyHtml, minifyCss, minifyJs, fingerprintName } from '../optimizer/optimizer.js';
 import { securityHeaders } from '../security/uploads.js';
 
+export function newsletterBlock(site) {
+  const nl = site?.newsletter;
+  if (!nl?.enabled) return '';
+  const form = nl.endpoint
+    ? `<form action="${escapeHtml(nl.endpoint)}" method="post"><label>Email updates<input type="email" name="email" required autocomplete="email"></label> <button type="submit">Subscribe</button></form>`
+    : '<p>Signup opening soon.</p>';
+  return `<section class="newsletter"><h2>${escapeHtml(nl.heading || 'Newsletter')}</h2><p>${escapeHtml(nl.text || '')}</p>${form}</section>`;
+}
+
+export function commentsSection({ site, slug, comments }) {
+  const cfg = site?.comments;
+  const approved = (comments || []).filter((c) => c.articleSlug === slug && c.status === 'Approved')
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const list = approved.map((c) =>
+    `<article class="comment"><p class="byline">${escapeHtml(c.author || 'Anonymous')} · ${escapeHtml((c.createdAt || '').slice(0, 10))}</p><div>${c.content}</div></article>`).join('\n');
+  const form = cfg?.enabled && cfg?.endpoint
+    ? `<form class="comment-form" action="${escapeHtml(cfg.endpoint)}" method="post"><h3>Leave a comment</h3><input type="hidden" name="slug" value="${escapeHtml(slug)}"><label>Name<input name="name" maxlength="80" autocomplete="name"></label><label>Comment<textarea name="message" rows="4" required maxlength="5000"></textarea></label><button type="submit">Post comment</button></form>`
+    : '';
+  if (!approved.length && !form) return '';
+  return `<section class="comments"><h2>Comments${approved.length ? ` (${approved.length})` : ''}</h2>${list || '<p>No comments yet.</p>'}${form}</section>`;
+}
+
 export function articleBody(article) {
   const raw = article.contentFormat === 'markdown' ? markdownToHtml(article.content) : String(article.content || '');
   return sanitizeHtml(raw);
@@ -37,7 +59,7 @@ export function buildSearchIndex({ articles }) {
 }
 
 export async function generateSite(input, { sitemapPerPage, now } = {}) {
-  const { site, articles = [], pages = [], categories = [], tags = [], authors = [], template } = input;
+  const { site, articles = [], pages = [], categories = [], tags = [], authors = [], comments = [], template } = input;
   const files = new Map(); // path -> string
   const tpl = template?.files || {};
   const css = tpl['style.css'] ? minifyCss(tpl['style.css']) : '';
@@ -71,7 +93,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
       `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p></article>`).join('\n');
     const url = canonicalFor(site.url, '/');
     const head = seoHead({ site, title: `${site.name} — ${site.tagline || ''}`.trim(), description: site.seo?.defaultDescription || site.description, canonical: url, jsonldObjects: [websiteJsonLd({ site })], extra: `${cssLink}\n${adsenseHead(site)}` });
-    const body = layout('index.html', baseCtx({ page: { title: site.name }, content: cards, 'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name }));
+    const body = layout('index.html', baseCtx({ page: { title: site.name }, content: cards + '\n' + newsletterBlock(site), 'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name }));
     files.set('index.html', minifyHtml(injectHead(body, head, jsTag)));
   }
 
@@ -96,7 +118,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
       ],
       extra: `${cssLink}\n${adsenseHead(site)}`,
     });
-    const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}`;
+    const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}\n${commentsSection({ site, slug: a.slug, comments })}\n${newsletterBlock(site)}`;
     const ctx = baseCtx({
       article: { title: a.title, content, author: author?.name || '', date: a.publishDate || a.createdAt, excerpt: a.excerpt },
       page: { title: a.title, content },

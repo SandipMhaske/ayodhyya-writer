@@ -1,6 +1,6 @@
 // IContentRepository abstraction: Memory (tests/offline fallback) + IndexedDB (browser).
 // Future: SQLite adapter (desktop) + cloud sync — same interface, no business-layer rewrite.
-export const COLLECTIONS = ['sites', 'articles', 'pages', 'categories', 'tags', 'authors', 'media', 'templates', 'revisions', 'deployments', 'audit', 'kv'];
+export const COLLECTIONS = ['sites', 'articles', 'pages', 'categories', 'tags', 'authors', 'media', 'templates', 'revisions', 'deployments', 'audit', 'kv', 'comments', 'subscribers'];
 
 export class MemoryStore {
   constructor(seed = {}) {
@@ -27,7 +27,7 @@ export class IndexedDBStore {
   open() {
     return new Promise((resolve, reject) => {
       if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unavailable'));
-      const req = indexedDB.open(this.dbName, 1);
+      const req = indexedDB.open(this.dbName, 2); // v2 adds comments + subscribers stores
       req.onupgradeneeded = () => {
         const db = req.result;
         for (const c of COLLECTIONS) if (!db.objectStoreNames.contains(c)) db.createObjectStore(c, { keyPath: 'id' });

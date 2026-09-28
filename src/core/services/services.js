@@ -1,6 +1,6 @@
 // Domain services — all business logic lives here, never in UI components.
 // Each service takes a repository (Memory/IndexedDB) so the build engine stays testable.
-import { createArticle, createPage, createCategory, createTag, createAuthor, createMedia, createTemplate, createRevision, touchArticle } from '../models/models.js';
+import { createArticle, createPage, createCategory, createTag, createAuthor, createMedia, createTemplate, createRevision, createComment, createSubscriber, touchArticle } from '../models/models.js';
 import { uniqueSlug, nowIso } from '../utils/utils.js';
 import { sanitizeHtml } from '../../security/sanitize.js';
 
@@ -75,6 +75,59 @@ export const AuthorService = {
 export const MediaService = {
   async register(repo, siteId, meta) { const m = createMedia({ ...meta, siteId }); await repo.put('media', m); return m; },
 };
+export const CommentService = {
+  // Reader comments are UNTRUSTED DATA: sanitized on the way in, escaped on render.
+  // Only Approved comments ever reach the generated site.
+  async add(repo, siteId, { articleSlug, author, content }) {
+    if (!articleSlug) throw new Error('Comment needs an article.');
+    if (!String(content || '').trim()) throw new Error('Comment is empty.');
+    const c = createComment({ siteId, articleSlug, author: String(author || 'Anonymous').slice(0, 80), content: sanitizeHtml(content).slice(0, 5000) });
+    await repo.put('comments', c);
+    await AuditService.log(repo, { action: 'comment.add', entityType: 'comment', entityId: c.id, detail: articleSlug });
+    return c;
+  },
+  async setStatus(repo, id, status) {
+    if (!['Pending', 'Approved', 'Spam'].includes(status)) throw new Error('Bad comment status: ' + status);
+    const cur = await repo.get('comments', id);
+    if (!cur) throw new Error('Comment not found: ' + id);
+    const next = { ...cur, status, updatedAt: nowIso(), version: (cur.version || 1) + 1 };
+    await repo.put('comments', next);
+    await AuditService.log(repo, { action: 'comment.' + status.toLowerCase(), entityType: 'comment', entityId: id, detail: cur.articleSlug });
+    return next;
+  },
+  async approvedFor(repo, siteId, articleSlug) {
+    return (await repo.query('comments', (c) => c.siteId === siteId && c.articleSlug === articleSlug && c.status === 'Approved'))
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  },
+  async pendingCount(repo, siteId) {
+    return (await repo.query('comments', (c) => c.siteId === siteId && c.status === 'Pending')).length;
+  },
+};
+export const SubscriberService = {
+  async add(repo, siteId, { email, name = '', source = 'site-form' }) {
+    const clean = String(email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(clean)) throw new Error('Not a valid email address.');
+    const dupe = await repo.query('subscribers', (s) => s.siteId === siteId && s.email === clean);
+    if (dupe.length) return dupe[0];
+    const s = createSubscriber({ siteId, email: clean, name: String(name).slice(0, 120), source });
+    await repo.put('subscribers', s);
+    return s;
+  },
+  async setStatus(repo, id, status) {
+    if (!['Active', 'Unsubscribed'].includes(status)) throw new Error('Bad subscriber status: ' + status);
+    const cur = await repo.get('subscribers', id);
+    if (!cur) throw new Error('Subscriber not found: ' + id);
+    const next = { ...cur, status, updatedAt: nowIso() };
+    await repo.put('subscribers', next);
+    return next;
+  },
+  toCsv(subscribers) {
+    // Portable export for any email provider. RFC-4180 quoting.
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    return ['email,name,status,source,subscribed_at',
+      ...(subscribers || []).map((s) => [s.email, s.name, s.status, s.source, s.createdAt].map(q).join(','))].join('\n') + '\n';
+  },
+};
 export const TemplateService = {
   async save(repo, siteId, partial) { const t = createTemplate({ ...partial, siteId }); await repo.put('templates', t); return t; },
   async setActive(repo, siteId, templateId) {
@@ -92,7 +145,7 @@ export const SearchService = {
 export const BackupService = {
   async exportAll(repo) {
     const data = {};
-    for (const c of ['sites', 'articles', 'pages', 'categories', 'tags', 'authors', 'media', 'templates', 'deployments']) data[c] = await repo.all(c);
+    for (const c of ['sites', 'articles', 'pages', 'categories', 'tags', 'authors', 'media', 'templates', 'deployments', 'comments', 'subscribers']) data[c] = await repo.all(c);
     return { exportedAt: nowIso(), app: 'ayodhyya-writer', version: 1, data };
   },
   async importAll(repo, backup) {

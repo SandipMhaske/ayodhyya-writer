@@ -69,7 +69,18 @@
           "code": 301
         }
       ],
-      "activeTemplateId": "tpl_default_v1"
+      "activeTemplateId": "tpl_default_v1",
+      "comments": {
+        "enabled": false,
+        "endpoint": "",
+        "heading": "Comments"
+      },
+      "newsletter": {
+        "enabled": false,
+        "endpoint": "",
+        "heading": "Newsletter",
+        "text": ""
+      }
     },
     {
       "id": "site_leetcode",
@@ -115,7 +126,18 @@
       },
       "privacy": {},
       "redirects": [],
-      "activeTemplateId": "tpl_default_v1"
+      "activeTemplateId": "tpl_default_v1",
+      "comments": {
+        "enabled": false,
+        "endpoint": "",
+        "heading": "Comments"
+      },
+      "newsletter": {
+        "enabled": false,
+        "endpoint": "",
+        "heading": "Newsletter",
+        "text": ""
+      }
     }
   ],
   "authors": [
@@ -321,5 +343,18 @@
     "distributionId": "E1234567890ABC",
     "region": "ap-south-1",
     "strategy": "atomic-s3-cloudfront"
-  }
+  },
+  "comments": [
+    {
+      "id": "seed_c1",
+      "createdAt": "2026-09-20T00:00:00.000Z",
+      "updatedAt": "2026-09-20T00:00:00.000Z",
+      "version": 1,
+      "siteId": "site_ayodhyya",
+      "articleSlug": "aws-lambda-guide",
+      "author": "Reader",
+      "content": "<p>Static-first finally clicked for me. Thanks!</p>",
+      "status": "Approved"
+    }
+  ]
 }

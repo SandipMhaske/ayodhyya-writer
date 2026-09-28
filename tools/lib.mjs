@@ -100,6 +100,7 @@ export async function loadInput({ siteId } = {}) {
       tags: scoped(await overlay('tags')),
       authors: scoped(await overlay('authors')),
       media: await overlay('media'),
+      comments: scoped(await overlay('comments')),
       template,
       deploymentProfile: readJsonSafe(path.join(DATA_DIR, 'deployment-profile.json'), seed.deploymentProfile || {}),
       prevManifest: readJsonSafe(path.join(DIST, '.build-manifest.json'), null),
