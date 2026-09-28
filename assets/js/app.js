@@ -12,6 +12,7 @@ import { generateSite, diffManifest } from '../../src/builder/generator.js';
 import { validateArticle, validateSiteHealth, validateBuildOutput, validateRedirects } from '../../src/core/validators/validators.js';
 import { buildDeploymentManifest } from '../../src/deployment/providers.js';
 import { inlineAssets, blobTypeFor, previewInterceptorScript, PREVIEW_MAP_KEY } from '../../src/preview/inline.js';
+import { assist } from '../../src/ai/assist.js';
 import { analyzeSeo } from '../../src/seo/analyzer.js';
 import { fetchArticle } from '../../src/core/utils/fetchArticle.js';
 import { diffRevision, renderDiff } from '../../src/core/utils/diff.js';
@@ -332,6 +333,11 @@ async function vArticleEdit(id) {
         <label>OG image<input id="f-og" value="${escapeHtml(a.ogImage)}"></label>
         <h4>Social preview</h4><div id="soc-prev"></div>
       </details>
+      <details id="ai-assist"><summary>AI assist (optional, off by default)</summary>
+        <p>Article text leaves this device <strong>only</strong> when you click below. Needs a provider URL + key in Settings.</p>
+        <div class="row"><button type="button" class="btn" id="ai-summarize">Summarize → excerpt</button><button type="button" class="btn" id="ai-keywords">Suggest keyword</button><button type="button" class="btn" id="ai-meta">Draft meta description</button></div>
+        <div id="ai-out" aria-live="polite"></div>
+      </details>
       <div class="row"><button class="btn primary" type="submit">Save</button><span id="autosave" aria-live="polite"></span></div>
     </form>
     <h2>Revision history</h2>
@@ -378,6 +384,29 @@ async function vArticleEdit(id) {
     const el = $('#' + id);
     if (el) el.addEventListener('input', updateSeoPanel);
   }
+  const aiRun = async (task, applyTo, niceName) => {
+    const out = $('#ai-out');
+    if (!out) return;
+    out.innerHTML = '<p>Asking…</p>';
+    try {
+      const text = stripTags($('#f-fmt').value === 'markdown' ? markdownToHtml(contentEl.value) : contentEl.value);
+      const result = await assist(task, { title: $('#f-title').value, focusKeyword: $('#f-kw').value, text }, {
+        baseUrl: localStorage.getItem('aw.aiBaseUrl') || '',
+        apiKey: sessionStorage.getItem('aw.aiKey') || '',
+        model: localStorage.getItem('aw.aiModel') || '',
+      });
+      const target = $(applyTo);
+      target.value = result;
+      target.dispatchEvent(new Event('input'));
+      out.innerHTML = `<p class="status-ok">✓ Inserted into ${niceName} — review, then Save.</p>`;
+    } catch (e) {
+      const needsSetup = e.kind === 'missing-key' || e.kind === 'disabled';
+      out.innerHTML = `<p class="status-err">${escapeHtml(e.message)}${needsSetup ? ' <a href="#/settings">Open Settings</a>' : ''}</p>`;
+    }
+  };
+  if ($('#ai-summarize')) $('#ai-summarize').onclick = () => aiRun('summarize', '#f-excerpt', 'excerpt');
+  if ($('#ai-keywords')) $('#ai-keywords').onclick = () => aiRun('keywords', '#f-kw', 'focus keyword');
+  if ($('#ai-meta')) $('#ai-meta').onclick = () => aiRun('meta', '#f-md', 'meta description');
   state.schemaRows = { steps: [...(a.howToSteps || [])], faq: [...(a.faqItems || [])] };
   const renderSchemaExtra = () => {
     const box = $('#schema-extra');
@@ -1054,6 +1083,11 @@ async function vSettings() {
     <label>Deploy token (Publisher) — kept in this tab only, never stored on disk<input id="svc-token" type="password" autocomplete="off" placeholder="${sessionStorage.getItem('aw.deployToken') ? 'token saved for this tab session' : 'paste token, saved to session memory only'}"></label>
     <div class="row"><button class="btn">Save</button><button class="btn danger" type="button" id="svc-forget">Forget token</button></div></form>
     <p>Backend deploys the <em>server's</em> <code>./dist</code> — run <code>node tools/build.mjs</code> on the server machine first when publishing from the browser.</p>
+    <h3>AI assist (optional, off unless configured)</h3><form class="grid" id="aif"><label>Provider URL (OpenAI-compatible)<input id="ai-url" placeholder="https://api.openai.com/v1" value="${escapeHtml(localStorage.getItem('aw.aiBaseUrl') || '')}"></label>
+    <label>Model<input id="ai-model" placeholder="gpt-4o-mini" value="${escapeHtml(localStorage.getItem('aw.aiModel') || '')}"></label>
+    <label>API key — tab memory only, never stored<input id="ai-key" type="password" autocomplete="off" placeholder="${sessionStorage.getItem('aw.aiKey') ? 'key saved for this tab session' : 'paste key, saved to session memory only'}"></label>
+    <div class="row"><button class="btn">Save</button><button class="btn danger" type="button" id="ai-forget">Forget key</button></div></form>
+    <p>Article text is sent to the provider only when you click an AI button in the editor — never automatically.</p>
     <h3>Shortcuts</h3><p><span class="kbd">Ctrl/⌘+S</span> save · <span class="kbd">Ctrl/⌘+P</span> preview · <span class="kbd">Ctrl/⌘+Shift+P</span> publish · <span class="kbd">Ctrl/⌘+K</span> insert link</p>
     <h3>Backup (offline, no secrets)</h3><div class="row"><button class="btn" id="exp">Export backup</button><input type="file" id="imp" accept="application/json" aria-label="Import backup"></div>
     <h3>Audit log</h3><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>
@@ -1068,6 +1102,16 @@ async function vSettings() {
     toast('Deployment service settings saved (token lives in tab memory only).');
   };
   $('#svc-forget').onclick = () => { sessionStorage.removeItem('aw.deployToken'); toast('Token forgotten.'); };
+  $('#aif').onsubmit = (e) => {
+    e.preventDefault();
+    localStorage.setItem('aw.aiBaseUrl', $('#ai-url').value.trim());
+    localStorage.setItem('aw.aiModel', $('#ai-model').value.trim());
+    const k = $('#ai-key').value.trim();
+    if (k) sessionStorage.setItem('aw.aiKey', k); // tab session only — never disk
+    $('#ai-key').value = '';
+    toast('AI settings saved (key lives in tab memory only).');
+  };
+  $('#ai-forget').onclick = () => { sessionStorage.removeItem('aw.aiKey'); toast('AI key forgotten.'); };
   $('#exp').onclick = async () => {
     const all = await BackupService.exportAll(state.repo);
     download(`ayodhyya-backup-${Date.now()}.json`, JSON.stringify(all, null, 2), 'application/json');
