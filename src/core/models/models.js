@@ -70,6 +70,8 @@ export function createArticle(partial = {}) {
     twitterDescription: '',
     twitterImage: '',
     schemaType: 'BlogPosting',
+    howToSteps: [], // [{ name, text }] — required for valid HowTo markup
+    faqItems: [], // [{ question, answer }] — required for valid FAQPage markup
     readingTime: readingTimeMinutes(content),
     wordCount: wordCountOf(content),
     revision: 1,

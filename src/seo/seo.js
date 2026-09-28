@@ -36,9 +36,36 @@ export function seoHead({ site, title, description, canonical, robots, og = {}, 
 
 export function articleJsonLd({ site, article, author, url }) {
   if (!article?.title) return null; // never emit invalid structured data
+  const type = article.schemaType || 'BlogPosting';
+  if (type === 'HowTo') {
+    const steps = (article.howToSteps || []).filter((s) => s?.text?.trim()).map((s, i) => ({
+      '@type': 'HowToStep', position: i + 1, name: (s.name || '').slice(0, 200) || undefined, text: s.text,
+    }));
+    if (!steps.length) return fallbackArticleLd(site, article, author, url, 'BlogPosting'); // no steps = not a HowTo
+    return {
+      '@context': 'https://schema.org', '@type': 'HowTo',
+      name: article.title,
+      description: article.metaDescription || article.excerpt || '',
+      datePublished: article.publishDate || article.createdAt,
+      author: author ? { '@type': 'Person', name: author.name } : undefined,
+      step: steps,
+    };
+  }
+  if (type === 'FAQPage') {
+    const qa = (article.faqItems || []).filter((f) => f?.question?.trim() && f?.answer?.trim()).map((f) => ({
+      '@type': 'Question', name: f.question,
+      acceptedAnswer: { '@type': 'Answer', text: f.answer },
+    }));
+    if (!qa.length) return fallbackArticleLd(site, article, author, url, 'BlogPosting'); // no Q&A = not an FAQPage
+    return { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: qa };
+  }
+  return fallbackArticleLd(site, article, author, url, ['BlogPosting', 'Article', 'NewsArticle'].includes(type) ? type : 'BlogPosting');
+}
+
+function fallbackArticleLd(site, article, author, url, type) {
   return {
     '@context': 'https://schema.org',
-    '@type': article.schemaType || 'BlogPosting',
+    '@type': type,
     headline: article.title,
     description: article.metaDescription || article.excerpt || '',
     datePublished: article.publishDate || article.createdAt,

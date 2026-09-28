@@ -28,6 +28,7 @@ async function buildAndValidate(input) {
   log(true, 'Generating pages', `${files.size} files`);
   const outCheck = validateBuildOutput(files);
   if (!outCheck.ok) { for (const e of outCheck.errors) log(false, 'output', e.message); process.exit(1); }
+  for (const w of outCheck.warnings) log(true, 'Budget note', w.message);
   const secrets = scanForSecrets(files);
   if (secrets.length) { for (const s of secrets) log(false, 'secret-scan', s.path); process.exit(1); }
   log(true, 'Security scan passed');

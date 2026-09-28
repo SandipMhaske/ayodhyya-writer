@@ -22,6 +22,10 @@ export function validateArticle(a, ctx = {}) {
   if ((a.metaDescription || '').length > 160) warnings.push({ code: 'long-description', message: `Description over 160 chars: ${a.title}` });
   if (!a.featuredImage) warnings.push({ code: 'missing-image', message: `Missing featured image: ${a.title}` });
   if (!a.authorId) warnings.push({ code: 'missing-author', message: `Missing author: ${a.title}` });
+  if (a.schemaType === 'HowTo' && !(a.howToSteps || []).some((s) => s?.text?.trim()))
+    warnings.push({ code: 'howto-no-steps', message: `HowTo without steps falls back to BlogPosting markup: ${a.title}` });
+  if (a.schemaType === 'FAQPage' && !(a.faqItems || []).some((f) => f?.question?.trim() && f?.answer?.trim()))
+    warnings.push({ code: 'faq-no-qa', message: `FAQPage without Q&A falls back to BlogPosting markup: ${a.title}` });
   return { errors, warnings, ok: errors.length === 0 };
 }
 
@@ -65,6 +69,9 @@ function missingAltImages(html) {
   return imgs.filter((t) => !/alt\s*=\s*("|')[^"']*\1/i.test(t) || /alt\s*=\s*("|')\s*\1/i.test(t)).length;
 }
 
+export const SIZE_BUDGETS = { '.html': 150_000, '.css': 50_000, '.js': 100_000, '.xml': 500_000, '.json': 500_000 };
+export const TOTAL_BUDGET = 5_000_000; // 5 MB whole-site warning line (Lighthouse weight discipline)
+
 export function validateBuildOutput(files) {
   // files: Map<path, string> — checks duplicate routes, missing assets, secrets, unsafe content.
   const errors = [], warnings = [];
@@ -81,6 +88,16 @@ export function validateBuildOutput(files) {
     if (!found) errors.push({ code: 'missing-file', message: `Missing required output: ${m}` });
   }
   for (const b of validateInternalLinks(files)) errors.push({ code: 'broken-link', message: `${b.page}: broken internal link → ${b.link}` });
+  let total = 0;
+  for (const [p, content] of files) {
+    if (typeof content !== 'string' || /\.(br|zst|gz)$/.test(p)) continue; // encoded variants don't count
+    total += content.length;
+    const ext = '.' + String(p).split('.').pop().toLowerCase();
+    if (SIZE_BUDGETS[ext] && content.length > SIZE_BUDGETS[ext]) {
+      warnings.push({ code: 'over-budget', message: `${p} is ${Math.round(content.length / 1024)} KB (budget ${Math.round(SIZE_BUDGETS[ext] / 1024)} KB)` });
+    }
+  }
+  if (total > TOTAL_BUDGET) warnings.push({ code: 'site-over-budget', message: `Whole site is ${Math.round(total / 1048576)} MB (budget 5 MB)` });
   return { errors, warnings, ok: errors.length === 0 };
 }
 

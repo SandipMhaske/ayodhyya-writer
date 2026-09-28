@@ -58,6 +58,16 @@ describe('validators', () => {
     const r = validateBuildOutput(new Map([['index.html', 'x']]));
     assert.ok(!r.ok, 'missing sitemap/robots flagged');
   });
+  it('warns on schema types missing their data, budgets on heavy files', () => {
+    const a = { title: 'T', slug: 't', content: '<p>x</p>', status: 'Draft', schemaType: 'HowTo', howToSteps: [] };
+    assert.ok(validateArticle(a, {}).warnings.some((w) => w.code === 'howto-no-steps'));
+    const b = { ...a, schemaType: 'FAQPage', faqItems: [{ question: 'Q?' }] };
+    assert.ok(validateArticle(b, {}).warnings.some((w) => w.code === 'faq-no-qa'));
+    const fat = new Map([['index.html', 'x'.repeat(200_000)], ['sitemap.xml', 'x'], ['robots.txt', 'x'], ['rss.xml', 'x'], ['404.html', 'x'], ['search-index.json', 'x']]);
+    const r = validateBuildOutput(fat);
+    assert.ok(r.ok, 'budgets warn, never block');
+    assert.ok(r.warnings.some((w) => w.code === 'over-budget' && w.message.includes('index.html')));
+  });
   it('validates redirect targets (open-redirect surface)', () => {
     assert.ok(validateRedirects({ redirects: [{ from: '/old/', to: '/new/', code: 301 }] }).ok);
     const bad = validateRedirects({ redirects: [

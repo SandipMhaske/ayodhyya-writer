@@ -35,6 +35,7 @@ step(true, 'Generating pages', `${files.size} files, ${publishedCount} published
 // 14–20. Validate output + secrets
 const outCheck = validateBuildOutput(files);
 for (const e of outCheck.errors) { step(false, 'output', e.message); blockers++; }
+for (const w of outCheck.warnings) console.log(`  [budget] WARN: ${w.message}`);
 const secrets = scanForSecrets(files);
 for (const s of secrets) { step(false, 'secret-scan', `${s.path} matches ${s.pattern}`); blockers++; }
 if (!secrets.length) step(true, 'Security scan', 'no secrets detected');

@@ -24,6 +24,17 @@ describe('seo engine', () => {
     assert.equal(articleJsonLd({ site: {}, article: { title: '' } }), null);
     assert.ok(articleJsonLd({ site: { name: 'S' }, article: { title: 'T' }, url: 'https://x/' })['@context']);
   });
+  it('emits valid HowTo/FAQ markup, falls back safely when empty', () => {
+    const how = articleJsonLd({ site: {}, article: { title: 'T', schemaType: 'HowTo', howToSteps: [{ name: 'Prep', text: 'Do the thing.' }] }, url: 'https://x/' });
+    assert.equal(how['@type'], 'HowTo');
+    assert.equal(how.step[0]['@type'], 'HowToStep');
+    const faq = articleJsonLd({ site: {}, article: { title: 'T', schemaType: 'FAQPage', faqItems: [{ question: 'Q?', answer: 'A.' }] }, url: 'https://x/' });
+    assert.equal(faq['@type'], 'FAQPage');
+    assert.equal(faq.mainEntity[0]['@type'], 'Question');
+    assert.equal(articleJsonLd({ site: {}, article: { title: 'T', schemaType: 'HowTo', howToSteps: [] }, url: 'https://x/' })['@type'], 'BlogPosting');
+    assert.equal(articleJsonLd({ site: {}, article: { title: 'T', schemaType: 'FAQPage', faqItems: [] }, url: 'https://x/' })['@type'], 'BlogPosting');
+    assert.equal(articleJsonLd({ site: {}, article: { title: 'T', schemaType: 'Bogus' }, url: 'https://x/' })['@type'], 'BlogPosting');
+  });
   it('builds sitemap/rss/robots', () => {
     assert.match(buildSitemap([{ loc: 'https://x.com/' }]), /urlset/);
     assert.match(buildRss({ site: { name: 'S', url: 'https://x.com' }, articles: [] }), /<rss/);

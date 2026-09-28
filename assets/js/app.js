@@ -325,6 +325,7 @@ async function vArticleEdit(id) {
         <div id="seo-panel"><p>Loading…</p></div>
         <label>Focus keyword (what should this rank for?)<input id="f-kw" value="${escapeHtml(a.focusKeyword || '')}" placeholder="e.g. solar panels"></label>
         <label>Structured data type<select id="f-schema">${['BlogPosting', 'Article', 'NewsArticle', 'HowTo', 'FAQPage'].map((t) => `<option ${t === (a.schemaType || 'BlogPosting') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <div id="schema-extra"></div>
         <label>Meta title<input id="f-mt" value="${escapeHtml(a.metaTitle)}"></label>
         <label>Meta description<textarea id="f-md" rows="2">${escapeHtml(a.metaDescription)}</textarea></label>
         <label>Canonical URL<input id="f-can" value="${escapeHtml(a.canonicalUrl)}"></label>
@@ -377,6 +378,33 @@ async function vArticleEdit(id) {
     const el = $('#' + id);
     if (el) el.addEventListener('input', updateSeoPanel);
   }
+  state.schemaRows = { steps: [...(a.howToSteps || [])], faq: [...(a.faqItems || [])] };
+  const renderSchemaExtra = () => {
+    const box = $('#schema-extra');
+    const kind = $('#f-schema').value;
+    if (kind === 'HowTo') {
+      box.innerHTML = `<h4>How-to steps (required for valid HowTo markup)</h4><div id="howto-rows">${state.schemaRows.steps.map((s, i) => `<div class="row" data-hrow="${i}"><input data-hf="name" value="${escapeHtml(s.name || '')}" placeholder="Step name" aria-label="Step name"><input data-hf="text" value="${escapeHtml(s.text || '')}" placeholder="Step instructions" aria-label="Step instructions"><button type="button" class="btn danger" data-hdel="${i}">Delete</button></div>`).join('')}</div><div class="row"><button type="button" class="btn" id="howto-add">+ Add step</button></div>`;
+      $('#howto-add').onclick = () => { state.schemaRows.steps.push({ name: '', text: '' }); renderSchemaExtra(); };
+      box.querySelectorAll('[data-hdel]').forEach((b) => (b.onclick = () => { state.schemaRows.steps.splice(Number(b.dataset.hdel), 1); renderSchemaExtra(); }));
+    } else if (kind === 'FAQPage') {
+      box.innerHTML = `<h4>Questions &amp; answers (required for valid FAQ markup)</h4><div id="faq-rows">${state.schemaRows.faq.map((f, i) => `<div class="row" data-frow="${i}"><input data-ff="question" value="${escapeHtml(f.question || '')}" placeholder="Question" aria-label="Question"><input data-ff="answer" value="${escapeHtml(f.answer || '')}" placeholder="Answer" aria-label="Answer"><button type="button" class="btn danger" data-fdel="${i}">Delete</button></div>`).join('')}</div><div class="row"><button type="button" class="btn" id="faq-add">+ Add Q&amp;A</button></div>`;
+      $('#faq-add').onclick = () => { state.schemaRows.faq.push({ question: '', answer: '' }); renderSchemaExtra(); };
+      box.querySelectorAll('[data-fdel]').forEach((b) => (b.onclick = () => { state.schemaRows.faq.splice(Number(b.dataset.fdel), 1); renderSchemaExtra(); }));
+    } else {
+      box.innerHTML = '<p>Standard article markup — nothing extra needed.</p>';
+    }
+  };
+  renderSchemaExtra();
+  $('#f-schema').addEventListener('change', renderSchemaExtra);
+  const syncSchemaRows = () => {
+    state.schemaRows.steps = [...document.querySelectorAll('#howto-rows [data-hrow]')].map((row) => ({
+      name: row.querySelector('[data-hf="name"]').value, text: row.querySelector('[data-hf="text"]').value,
+    }));
+    state.schemaRows.faq = [...document.querySelectorAll('#faq-rows [data-frow]')].map((row) => ({
+      question: row.querySelector('[data-ff="question"]').value, answer: row.querySelector('[data-ff="answer"]').value,
+    }));
+  };
+  $('#schema-extra').addEventListener('input', syncSchemaRows);
   document.querySelectorAll('.editor-tabs button').forEach((b) => (b.onclick = () => {
     state.editing.mode = b.dataset.m;
     const m = b.dataset.m;
@@ -407,6 +435,8 @@ async function vArticleEdit(id) {
       tagIds: $('#f-tags').value.split(',').map((s) => s.trim()).filter(Boolean),
       metaTitle: $('#f-mt').value, metaDescription: $('#f-md').value, canonicalUrl: $('#f-can').value, ogImage: $('#f-og').value,
       focusKeyword: $('#f-kw').value, schemaType: $('#f-schema').value,
+      howToSteps: (state.schemaRows?.steps || []).filter((s) => (s.text || '').trim()),
+      faqItems: (state.schemaRows?.faq || []).filter((f) => (f.question || '').trim() && (f.answer || '').trim()),
     };
     const next = await ArticleService.update(state.repo, a.id, { ...patch, note: silent ? 'autosave' : 'edited' });
     if (!silent) { toast('Saved locally (offline OK).'); route(); }
