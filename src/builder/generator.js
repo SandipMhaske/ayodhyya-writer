@@ -36,6 +36,28 @@ export function articleBody(article) {
   return sanitizeHtml(raw);
 }
 
+export function addHeadingIds(html) {
+  // Slugs h2/h3 headings with stable ids for TOC anchors + deep links.
+  // Runs post-sanitize (id attributes are not author-trusted) at build time.
+  const seen = new Map();
+  return String(html ?? '').replace(/<(h[23])>([^<]*)<\/\1>/gi, (full, tag, text) => {
+    let base = text.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    return `<${tag} id="${base}${n > 1 ? `-${n}` : ''}">${text}</${tag}>`;
+  });
+}
+
+export function tocFor(html) {
+  // Flat TOC from h2/h3 headings (h3 nested). Empty string when too few headings.
+  const items = [...String(html ?? '').matchAll(/<(h[23]) id="([^"]+)">([^<]*)<\/\1>/gi)]
+    .map((m) => ({ level: Number(m[1][1]), id: m[2], text: m[3] }));
+  if (items.length < 2) return '';
+  return `<nav class="toc" aria-label="Table of contents"><p>On this page</p><ul>${items
+    .map((i) => `<li class="toc-${i.level}"><a href="#${i.id}">${escapeHtml(i.text)}</a></li>`).join('')}</ul></nav>`;
+}
+
 function adsenseHead(site) {
   const pub = site?.adsense?.publisherId;
   if (!pub) return '';
@@ -103,7 +125,8 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     const author = authorById.get(a.authorId);
     const cat = catById.get((a.categoryIds || [])[0]);
     const url = canonicalFor(site.url, `/articles/${a.slug}/`);
-    const bodyHtml = articleBody(a);
+    const bodyHtml = addHeadingIds(articleBody(a));
+    const toc = tocFor(bodyHtml);
     const head = seoHead({
       site,
       title: a.metaTitle || a.title,
@@ -123,6 +146,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
       article: { title: a.title, content, author: author?.name || '', date: a.publishDate || a.createdAt, excerpt: a.excerpt },
       page: { title: a.title, content },
       content,
+      toc,
       'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name,
     });
     files.set(`articles/${a.slug}/index.html`, minifyHtml(injectHead(layout('article.html', ctx), head, jsTag)));

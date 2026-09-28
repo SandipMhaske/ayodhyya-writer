@@ -1,6 +1,6 @@
 {
   "name": "ayodhyya-writer",
-  "version": "6.0.0",
+  "version": "7.0.0",
   "description": "Ayodhyya Writer — offline-first lightweight publishing CRM + static website builder + one-click AWS deployment",
   "type": "module",
   "license": "MIT",

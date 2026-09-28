@@ -55,4 +55,16 @@ describe('integration: store → build pipeline', () => {
     assert.ok(r.files.has('articles/sched-past/index.html'), 'due scheduled article is live');
     assert.ok(![...r.files.keys()].some((k) => k.includes('sched-future')), 'future article withheld');
   });
+
+  it('publishDue flips only past-due scheduled articles', async () => {
+    const { ArticleService } = await import('../src/core/services/services.js');
+    const repo = new MemoryStore();
+    const past = await ArticleService.create(repo, 's1', { title: 'Past', content: '<p>x</p>', status: 'Scheduled', publishDate: '2020-01-01T00:00:00.000Z' });
+    const future = await ArticleService.create(repo, 's1', { title: 'Future', content: '<p>x</p>', status: 'Scheduled', publishDate: '2099-01-01T00:00:00.000Z' });
+    const flipped = await ArticleService.publishDue(repo, 's1', new Date('2026-06-01T00:00:00.000Z').getTime());
+    assert.deepEqual(flipped, [past.slug]);
+    assert.equal((await repo.get('articles', past.id)).status, 'Published');
+    assert.equal((await repo.get('articles', future.id)).status, 'Scheduled');
+    assert.ok((await repo.all('audit')).some((e) => e.action === 'articles.publishDue'), 'audit trail recorded');
+  });
 });

@@ -47,6 +47,18 @@ export const ArticleService = {
       if (p.revision !== p.lastDeployedRevision) await repo.put('pages', { ...p, status: p.status === 'Modified' ? 'Published' : p.status, lastDeployedRevision: p.revision, updatedAt: nowIso() });
     }
   },
+  async publishDue(repo, siteId, now = Date.now()) {
+    // Flips due Scheduled articles to Published (they'd go live on next build anyway).
+    const flipped = [];
+    for (const a of await this.list(repo, siteId)) {
+      if (a.status === 'Scheduled' && a.publishDate && !Number.isNaN(Date.parse(a.publishDate)) && Date.parse(a.publishDate) <= now) {
+        await repo.put('articles', { ...a, status: 'Published', updatedAt: nowIso(), version: (a.version || 1) + 1, revision: (a.revision || 1) + 1 });
+        flipped.push(a.slug);
+      }
+    }
+    if (flipped.length) await AuditService.log(repo, { action: 'articles.publishDue', entityType: 'site', entityId: siteId, detail: flipped.join(', ') });
+    return flipped;
+  },
 };
 
 export const PageService = {

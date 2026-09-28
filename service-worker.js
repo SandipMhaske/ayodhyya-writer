@@ -18,6 +18,7 @@ const APP_SHELL = [
   './src/core/utils/fetchArticle.js',
   './src/core/utils/diff.js',
   './src/media/importImages.js',
+  './src/security/backupCryptoBrowser.js',
   './src/ai/assist.js',
   './src/core/models/models.js',
   './src/core/services/services.js',

@@ -11,4 +11,6 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;b
 .prose img{max-width:100%;height:auto}.prose pre{background:#0f172a;color:#e2e8f0;padding:1rem;overflow:auto;border-radius:.5rem}
 .byline{color:var(--muted)}.site-footer{border-top:1px solid var(--line);margin-top:3rem;padding:1.5rem 0;color:var(--muted)}
 a{color:#0c4a6e}a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.toc{background:#f8fafc;border:1px solid var(--line);border-radius:.5rem;padding:.75rem 1rem;margin:1rem 0;font-size:.9rem}
+.toc p{margin:.25rem 0;font-weight:700}.toc ul{margin:.25rem 0;padding-left:1.25rem}.toc-3{margin-left:1rem}
 img{max-width:100%;height:auto}input,button{font:inherit}button{background:#0f172a;color:#fff;border:0;border-radius:.5rem;padding:.5rem 1rem}

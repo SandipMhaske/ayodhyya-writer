@@ -13,6 +13,7 @@ import { validateArticle, validateSiteHealth, validateBuildOutput, validateRedir
 import { buildDeploymentManifest } from '../../src/deployment/providers.js';
 import { inlineAssets, blobTypeFor, previewInterceptorScript, PREVIEW_MAP_KEY } from '../../src/preview/inline.js';
 import { assist } from '../../src/ai/assist.js';
+import { encryptBackupBrowser, decryptBackupBrowser, isEncryptedBackupBrowser } from '../../src/security/backupCryptoBrowser.js';
 import { analyzeSeo } from '../../src/seo/analyzer.js';
 import { fetchArticle } from '../../src/core/utils/fetchArticle.js';
 import { diffRevision, renderDiff } from '../../src/core/utils/diff.js';
@@ -1089,7 +1090,7 @@ async function vSettings() {
     <div class="row"><button class="btn">Save</button><button class="btn danger" type="button" id="ai-forget">Forget key</button></div></form>
     <p>Article text is sent to the provider only when you click an AI button in the editor — never automatically.</p>
     <h3>Shortcuts</h3><p><span class="kbd">Ctrl/⌘+S</span> save · <span class="kbd">Ctrl/⌘+P</span> preview · <span class="kbd">Ctrl/⌘+Shift+P</span> publish · <span class="kbd">Ctrl/⌘+K</span> insert link</p>
-    <h3>Backup (offline, no secrets)</h3><div class="row"><button class="btn" id="exp">Export backup</button><input type="file" id="imp" accept="application/json" aria-label="Import backup"></div>
+    <h3>Backup (offline, no secrets)</h3><div class="row"><button class="btn" id="exp">Export backup</button><button class="btn" id="exp-enc">Export encrypted</button><input type="file" id="imp" accept="application/json,.enc" aria-label="Import backup"></div>
     <h3>Audit log</h3><table><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>
     ${audit.map((a) => `<tr><td>${escapeHtml((a.createdAt || '').slice(0, 16).replace('T', ' '))}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.detail || '')}</td></tr>`).join('') || '<tr><td colspan="3">No events yet.</td></tr>'}
     </tbody></table>`;
@@ -1116,14 +1117,34 @@ async function vSettings() {
     const all = await BackupService.exportAll(state.repo);
     download(`ayodhyya-backup-${Date.now()}.json`, JSON.stringify(all, null, 2), 'application/json');
   };
+  $('#exp-enc').onclick = () => {
+    modal(`<h2>Encrypted backup</h2><p>AES-256-GCM, password-protected. Wrong password = unrecoverable.</p><form class="grid" id="enc-f"><label>Password (8+ characters)<input id="enc-p1" type="password" autocomplete="new-password"></label><label>Confirm password<input id="enc-p2" type="password" autocomplete="new-password"></label><div class="row"><button class="btn primary">Download .enc backup</button></div></form>`);
+    $('#enc-f').onsubmit = async (e) => {
+      e.preventDefault();
+      if ($('#enc-p1').value !== $('#enc-p2').value) { toast('Passwords do not match.'); return; }
+      try {
+        const all = await BackupService.exportAll(state.repo);
+        const enc = await encryptBackupBrowser(JSON.stringify(all), $('#enc-p1').value);
+        download(`ayodhyya-backup-${Date.now()}.enc`, enc, 'text/plain');
+        $('#modal').close();
+        toast('Encrypted backup downloaded.');
+      } catch (err) { toast(err.message); }
+    };
+  };
   $('#imp').onchange = async (e) => {
     const f = e.target.files[0];
     if (!f) return;
     try {
-      await BackupService.importAll(state.repo, JSON.parse(await f.text()));
+      let text = await f.text();
+      if (isEncryptedBackupBrowser(text)) {
+        const pw = prompt('Encrypted backup — enter password:');
+        if (!pw) return;
+        text = await decryptBackupBrowser(text, pw);
+      }
+      await BackupService.importAll(state.repo, JSON.parse(text));
       toast('Backup imported. Reloading…');
       setTimeout(() => location.reload(), 800);
-    } catch { toast('Invalid backup file.'); }
+    } catch { toast('Invalid backup file or wrong password.'); }
   };
 }
 

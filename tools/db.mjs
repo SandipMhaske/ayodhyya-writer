@@ -110,6 +110,16 @@ if (cmd === '--init') {
   db.close();
   console.log(`Imported as draft: "${a.title}" (${a.slug}, ${a.wordCount} words, canonical ${found.canonicalUrl})`);
   console.log(`Images: ${localized} localized to /assets/images/, ${failed.length} kept remote${failed.length ? ' — ' + failed.slice(0, 3).join('; ') : ''}`);
+} else if (cmd === '--publish-due') {
+  const { ArticleService } = await import('../src/core/services/services.js');
+  const db = await openDatabase();
+  const sites = await db.all('sites');
+  const targets = arg('site') ? sites.filter((s) => s.id === arg('site')) : sites;
+  for (const s of targets) {
+    const flipped = await ArticleService.publishDue(db, s.id);
+    console.log(`${s.id}: ${flipped.length ? 'published ' + flipped.join(', ') : 'nothing due'}`);
+  }
+  db.close();
 } else if (cmd === '--sql') {
   const q = arg('sql', process.argv[3] || '');
   if (!q) { console.error('Usage: node tools/db.mjs --sql="SELECT id, json_extract(data,\'$.title\') AS title FROM articles"'); process.exit(1); }
