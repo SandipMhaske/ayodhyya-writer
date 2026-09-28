@@ -687,6 +687,8 @@ async function vSite() {
     <h3>Social</h3>
     <label>X/Twitter<input id="s-tw" value="${escapeHtml(s.social?.twitter || '')}"></label>
     <label>Facebook<input id="s-fb" value="${escapeHtml(s.social?.facebook || '')}"></label>
+    <h3>Contact form (posts to your endpoint)</h3>
+    <label>Form endpoint (blank shows “opening soon”)<input id="s-contact" value="${escapeHtml(s.contact?.endpoint || '')}" placeholder="https://forms.example/contact"></label>
     <h3>Google AdSense (public IDs only — never secrets)</h3>
     <label>Publisher ID (ca-pub-…)<input id="s-pub" value="${escapeHtml(s.adsense?.publisherId || '')}" placeholder="ca-pub-0000000000000000"></label>
     <label>Ad slot — after article<input id="s-slot" value="${escapeHtml(s.adsense?.slots?.['after-article'] || '')}" placeholder="0000000000"></label>
@@ -740,6 +742,7 @@ async function vSite() {
       description: $('#s-desc').value, theme: { ...s.theme, colorPrimary: $('#s-c1').value, colorAccent: $('#s-c2').value },
       seo: { ...s.seo, defaultDescription: $('#s-seod').value, robots: $('#s-rob').value },
       social: { ...s.social, twitter: $('#s-tw').value, facebook: $('#s-fb').value },
+      contact: { endpoint: $('#s-contact').value.trim() },
       adsense: { publisherId: $('#s-pub').value.trim(), slots: { ...s.adsense?.slots, 'after-article': $('#s-slot').value.trim() } },
       comments: { enabled: $('#s-com-on').checked, endpoint: $('#s-com-ep').value.trim(), heading: 'Comments' },
       newsletter: { enabled: $('#s-nl-on').checked, endpoint: $('#s-nl-ep').value.trim(), heading: $('#s-nl-h').value.trim() || 'Newsletter', text: $('#s-nl-t').value },

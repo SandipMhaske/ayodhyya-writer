@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryStore } from '../src/storage/repository.js';
 import { CommentService, SubscriberService } from '../src/core/services/services.js';
-import { commentsSection, newsletterBlock } from '../src/builder/generator.js';
+import { commentsSection, newsletterBlock, contactForm } from '../src/builder/generator.js';
 
 describe('comments', () => {
   it('sanitizes on input, holds Pending, gates rendering on approval', async () => {
@@ -56,5 +56,12 @@ describe('newsletter', () => {
     assert.ok(on.includes('action="https://x.example/sub"') && on.includes('type="email"') && on.includes('Monthly.'));
     const soon = newsletterBlock({ newsletter: { enabled: true, endpoint: '', heading: 'Updates' } });
     assert.ok(soon.includes('opening soon') && !soon.includes('<form'));
+  });
+  it('contact form only on the contact page, endpoint escaped', () => {
+    assert.equal(contactForm({ contact: { endpoint: 'https://x.example/c' } }, 'about'), '');
+    assert.ok(contactForm({}, 'contact').includes('opening soon'));
+    const f = contactForm({ contact: { endpoint: 'https://x.example/c?a=1&b=2' } }, 'contact');
+    assert.ok(f.includes('action="https://x.example/c?a=1&amp;b=2"'));
+    assert.ok(f.includes('name="message"') && f.includes('required'));
   });
 });

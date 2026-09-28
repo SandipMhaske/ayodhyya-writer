@@ -28,6 +28,7 @@ export function createSite(partial = {}) {
     navigation: { header: [], footer: [] },
     seo: { titleSuffix: '', defaultDescription: '', robots: 'index,follow', canonicalBase: '' },
     social: { twitter: '', facebook: '', linkedin: '', whatsapp: '', telegram: '' },
+    contact: { endpoint: '' },
     adsense: { publisherId: '', slots: {}, placements: {} },
     comments: { enabled: false, endpoint: '', heading: 'Comments' },
     newsletter: { enabled: false, endpoint: '', heading: 'Newsletter', text: '' },

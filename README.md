@@ -13,10 +13,10 @@ Zero npm dependencies. Vanilla HTML/CSS/JS. IndexedDB local-first. Testable buil
 ## Quick start (no internet required after clone)
 
 ```powershell
-# 1. Serve the writer app locally (any static server; node tool included)
-node tools/preview.mjs --admin
-# open http://localhost:8080/index.html
+# 1. One command (database → build → serve + open browser)
+npm start
 # ...or on Windows: double-click start-writer.bat (also pinned to your taskbar)
+# ...or manually: node tools/preview.mjs --admin, then open http://localhost:8080/index.html
 
 # 2. Or just open index.html directly — all editing works offline.
 # 3. Run tests

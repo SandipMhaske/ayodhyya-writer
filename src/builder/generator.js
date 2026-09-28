@@ -9,8 +9,15 @@ import { escapeHtml, hashContent, stripTags } from '../core/utils/utils.js';
 import { minifyHtml, minifyCss, minifyJs, fingerprintName } from '../optimizer/optimizer.js';
 import { securityHeaders } from '../security/uploads.js';
 
-export function newsletterBlock(site) {
-  const nl = site?.newsletter;
+export function contactForm(site, slug) {
+  // Working contact form on the contact page only, posting to the owner's endpoint.
+  if (slug !== 'contact') return '';
+  const endpoint = site?.contact?.endpoint;
+  if (!endpoint) return '<p>Contact form opening soon — email us instead.</p>';
+  return `<form class="contact-form" action="${escapeHtml(endpoint)}" method="post"><label>Name<input name="name" maxlength="120" autocomplete="name" required></label><label>Email<input type="email" name="email" autocomplete="email" required></label><label>Message<textarea name="message" rows="6" required maxlength="10000"></textarea></label><button type="submit">Send message</button></form>`;
+}
+
+export function newsletterBlock(site) {  const nl = site?.newsletter;
   if (!nl?.enabled) return '';
   const form = nl.endpoint
     ? `<form action="${escapeHtml(nl.endpoint)}" method="post"><label>Email updates<input type="email" name="email" required autocomplete="email"></label> <button type="submit">Subscribe</button></form>`
@@ -237,7 +244,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   for (const p of pages.filter((p) => p.status === 'Published' || p.status === 'Modified')) {
     const url = canonicalFor(site.url, `/${p.slug}/`);
     const head = seoHead({ site, title: p.metaTitle || p.title, description: p.metaDescription, canonical: p.canonicalUrl || url, extra: cssLink });
-    const body = sanitizeHtml(p.contentFormat === 'markdown' ? markdownToHtml(p.content) : p.content);
+    const body = sanitizeHtml(p.contentFormat === 'markdown' ? markdownToHtml(p.content) : p.content) + '\n' + contactForm(site, p.slug);
     files.set(`${p.slug}/index.html`, minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: p.title, content: body }, content: body, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
     sitemapUrls.push({ loc: url, lastmod: isoDate(p.updatedAt) });
   }
