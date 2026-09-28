@@ -238,6 +238,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     const head = seoHead({ site, title: `${c.name} — ${site.name}`, description: c.description, canonical: url, extra: cssLink });
     const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n');
     files.set(`category/${c.slug}/index.html`, minifyHtml(injectHead(layout('category.html', baseCtx({ page: { title: c.name }, content: cards, category: c, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+    if (list.length) files.set(`category/${c.slug}/rss.xml`, buildRss({ site, articles: list, title: `${c.name} — ${site.name}`, link: url }));
     sitemapUrls.push({ loc: url, lastmod: isoDate(c.updatedAt) });
   }
   for (const t of tags) {
@@ -246,14 +247,16 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     const head = seoHead({ site, title: `${t.name} — ${site.name}`, canonical: url, extra: cssLink });
     const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n');
     files.set(`tag/${t.slug}/index.html`, minifyHtml(injectHead(layout('tag.html', baseCtx({ page: { title: t.name }, content: cards, tag: t, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+    if (list.length) files.set(`tag/${t.slug}/rss.xml`, buildRss({ site, articles: list, title: `${t.name} — ${site.name}`, link: url }));
   }
 
   // Static pages (about/contact/privacy/...)
   for (const p of pages.filter((p) => p.status === 'Published' || p.status === 'Modified')) {
     const url = canonicalFor(site.url, `/${p.slug}/`);
     const head = seoHead({ site, title: p.metaTitle || p.title, description: p.metaDescription, canonical: p.canonicalUrl || url, extra: cssLink });
-    const body = sanitizeHtml(p.contentFormat === 'markdown' ? markdownToHtml(p.content) : p.content) + '\n' + contactForm(site, p.slug);
-    files.set(`${p.slug}/index.html`, minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: p.title, content: body }, content: body, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
+    const body = addHeadingIds(sanitizeHtml(p.contentFormat === 'markdown' ? markdownToHtml(p.content) : p.content) + '\n' + contactForm(site, p.slug));
+    const toc = tocFor(body);
+    files.set(`${p.slug}/index.html`, minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: p.title, content: body }, content: body, toc, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
     sitemapUrls.push({ loc: url, lastmod: isoDate(p.updatedAt) });
   }
 

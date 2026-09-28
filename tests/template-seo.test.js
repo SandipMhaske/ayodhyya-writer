@@ -40,6 +40,19 @@ describe('seo engine', () => {
     assert.match(buildRss({ site: { name: 'S', url: 'https://x.com' }, articles: [] }), /<rss/);
     assert.match(buildRobots({ site: { url: 'https://x.com' } }), /Sitemap:/);
   });
+  it('builds scoped category feeds', async () => {
+    const a1 = { title: 'A1', slug: 'a1', excerpt: '', status: 'Published', publishDate: '2026-01-01' };
+    const a2 = { title: 'A2', slug: 'a2', excerpt: '', status: 'Draft' };
+    const feed = buildRss({ site: { name: 'S', url: 'https://x.com' }, articles: [a1, a2], title: 'Cat — S', link: 'https://x.com/category/cat/' });
+    assert.ok(feed.includes('<title>Cat — S</title>'), 'scoped channel title');
+    assert.ok(feed.includes('a1') && !feed.includes('a2'), 'only live items in scope');
+    const { generateSite } = await import('../src/builder/generator.js');
+    const { loadTemplateFiles } = await import('../tools/lib.mjs');
+    const seed = await import('../seed/seed-data.json', { with: { type: 'json' } }).then((m) => m.default);
+    const { files } = await generateSite({ site: seed.sites[0], articles: seed.articles, pages: [], categories: seed.categories, tags: seed.tags, authors: seed.authors, media: [], comments: [], template: loadTemplateFiles('default') });
+    assert.ok(files.get('category/aws/rss.xml').includes('aws-lambda-guide'), 'category feed generated');
+    assert.ok(!files.has('category/web/rss.xml'), 'empty categories get no feed');
+  });
   it('paginates large sitemaps with an index, single file when small', () => {
     const urls = Array.from({ length: 5 }, (_, i) => ({ loc: `https://x.com/${i}/` }));
     const small = paginateSitemap(urls);

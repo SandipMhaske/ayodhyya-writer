@@ -200,7 +200,7 @@ async function vDashboard() {
       <div class="card"><h3>Last deployment</h3><div class="big" style="font-size:1.1rem">${lastDep ? escapeHtml(lastDep.version) : '—'}</div><div>${lastDep ? escapeHtml(lastDep.createdAt) : 'Never published from this device'}</div></div>
       <div class="card"><h3>SEO / Perf / Content</h3><div>SEO ${score(health.seo)} · Perf ${score(health.performance)} · Content ${score(health.content)}</div></div>
       <div class="card"><h3>Pending changes</h3><div class="big">${pending.length}</div><div><button class="btn accent" id="dash-pub">Publish website</button></div></div>
-      <div class="card"><h3>Scheduled posts</h3><div class="big">${scheduled.length}</div><div>${dueCount ? `<span class="status-warn">${dueCount} due — publishes on next build</span>` : scheduled.length ? `Next: ${escapeHtml(scheduled[0].title)} (${escapeHtml((scheduled[0].publishDate || '').slice(0, 10))})` : 'None scheduled'}</div></div>
+      <div class="card"><h3>Scheduled posts</h3><div class="big">${scheduled.length}</div><div>${dueCount ? `<span class="status-warn">${dueCount} due — publishes on next build</span> <button class="btn" id="dash-pubdue">Publish due now</button>` : scheduled.length ? `Next: ${escapeHtml(scheduled[0].title)} (${escapeHtml((scheduled[0].publishDate || '').slice(0, 10))})` : 'None scheduled'}</div></div>
       <div class="card"><h3>Engagement</h3><div>${pendingComments} comment(s) awaiting moderation · ${subs.length} subscriber(s)</div><div><a href="#/organize">Moderate</a></div></div>
     </div>
     <h2>Insights (computed locally — no tracking)</h2>
@@ -211,6 +211,12 @@ async function vDashboard() {
     <h2>Content health</h2>
     <ul class="checklist">${[...health.content, ...health.seo, ...health.media, ...health.performance, ...health.security, ...health.deployment].map((h) => `<li><span class="status-${h.level === 'ok' ? 'ok' : h.level === 'warn' ? 'warn' : 'err'}">${h.level === 'ok' ? '✓' : h.level === 'warn' ? '⚠' : '✗'}</span> ${escapeHtml(h.message)}</li>`).join('')}</ul>`;
   $('#dash-pub').onclick = publishFlow;
+  const pubdue = $('#dash-pubdue');
+  if (pubdue) pubdue.onclick = async () => {
+    const flipped = await ArticleService.publishDue(state.repo, state.siteId);
+    toast(flipped.length ? `Published ${flipped.length} due post(s).` : 'Nothing due right now.');
+    route();
+  };
   const tourDone = $('#tour-done');
   if (tourDone) tourDone.onclick = () => { localStorage.setItem('aw.tourDone', '1'); $('#tour').remove(); };
   $('#dash-search').onsubmit = async (e) => {

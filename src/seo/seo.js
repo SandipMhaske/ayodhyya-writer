@@ -113,7 +113,7 @@ export function buildSitemapIndex(siteUrl, pages) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows.join('\n')}\n</sitemapindex>`;
 }
 
-export function buildRss({ site, articles }) {
+export function buildRss({ site, articles, title, link }) {
   const items = (articles || []).filter((a) => a.status === 'Published' || a.status === 'Modified').map((a) => `
     <item>
       <title>${escapeHtml(a.title)}</title>
@@ -122,7 +122,7 @@ export function buildRss({ site, articles }) {
       <description>${escapeHtml(a.excerpt || a.metaDescription || '')}</description>
       ${a.publishDate ? `<pubDate>${escapeHtml(new Date(a.publishDate).toUTCString())}</pubDate>` : ''}
     </item>`).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n<channel>\n<title>${escapeHtml(site?.name || '')}</title>\n<link>${escapeHtml(site?.url || '')}</link>\n<description>${escapeHtml(site?.description || site?.tagline || '')}</description>\n${items}\n</channel>\n</rss>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n<channel>\n<title>${escapeHtml(title || site?.name || '')}</title>\n<link>${escapeHtml(link || site?.url || '')}</link>\n<description>${escapeHtml(site?.description || site?.tagline || '')}</description>\n${items}\n</channel>\n</rss>`;
 }
 
 export function buildRobots({ site, production = true }) {
