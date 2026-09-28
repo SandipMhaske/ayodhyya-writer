@@ -1,6 +1,6 @@
 /* Ayodhyya Writer service worker — offline-first app shell cache.
    Never caches sensitive data; deployment secrets are never in cache. */
-const CACHE = 'ayodhyya-writer-v6';
+const CACHE = 'ayodhyya-writer-v7';
 const APP_SHELL = [
   './',
   './index.html',
@@ -8,6 +8,8 @@ const APP_SHELL = [
   './assets/js/app.js',
   './manifest.webmanifest',
   './assets/icons/icon.svg',
+  './assets/icons/icon-192.png',
+  './assets/icons/icon-512.png',
   './seed/seed-data.json',
   // Every ES module app.js imports — without these an offline reload is a dead app.
   './src/core/utils/utils.js',
