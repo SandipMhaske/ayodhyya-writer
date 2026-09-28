@@ -86,6 +86,20 @@
       pre.appendChild(btn);
     });
   }
+  function consent() {
+    var bar = document.getElementById('cookiebanner');
+    if (!bar) return;
+    var v = null;
+    try { v = localStorage.getItem('aw.consent'); } catch (e) { v = null; }
+    if (v) return;
+    bar.hidden = false;
+    bar.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-consent]');
+      if (!b) return;
+      try { localStorage.setItem('aw.consent', '1'); } catch (err) { /* private mode */ }
+      bar.hidden = true;
+    });
+  }
   function fontSize() {
     var prose = document.querySelector('.prose');
     if (!prose) return;
@@ -111,6 +125,7 @@
     share();
     scrollspy();
     fontSize();
+    consent();
     readingProgress();
     copyCode();
     const box = document.getElementById('q');

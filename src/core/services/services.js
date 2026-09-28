@@ -3,6 +3,7 @@
 import { createArticle, createPage, createCategory, createTag, createAuthor, createMedia, createTemplate, createRevision, createComment, createSubscriber, touchArticle } from '../models/models.js';
 import { uniqueSlug, nowIso } from '../utils/utils.js';
 import { sanitizeHtml } from '../../security/sanitize.js';
+import { scoreSpam } from '../../security/spam.js';
 
 async function takenSlugs(repo, siteId) {
   const arts = await repo.query('articles', (a) => a.siteId === siteId);
@@ -105,9 +106,11 @@ export const CommentService = {
   async add(repo, siteId, { articleSlug, author, content }) {
     if (!articleSlug) throw new Error('Comment needs an article.');
     if (!String(content || '').trim()) throw new Error('Comment is empty.');
-    const c = createComment({ siteId, articleSlug, author: String(author || 'Anonymous').slice(0, 80), content: sanitizeHtml(content).slice(0, 5000) });
+    const clean = sanitizeHtml(content).slice(0, 5000);
+    const judged = scoreSpam({ author, content: clean });
+    const c = createComment({ siteId, articleSlug, author: String(author || 'Anonymous').slice(0, 80), content: clean, spamScore: judged.score, status: judged.verdict === 'spam' ? 'Spam' : 'Pending' });
     await repo.put('comments', c);
-    await AuditService.log(repo, { action: 'comment.add', entityType: 'comment', entityId: c.id, detail: articleSlug });
+    await AuditService.log(repo, { action: 'comment.add', entityType: 'comment', entityId: c.id, detail: `${articleSlug} (spam ${judged.score})` });
     return c;
   },
   async setStatus(repo, id, status) {
@@ -127,8 +130,7 @@ export const CommentService = {
     return (await repo.query('comments', (c) => c.siteId === siteId && c.status === 'Pending')).length;
   },
 };
-export const SubscriberService = {
-  async add(repo, siteId, { email, name = '', source = 'site-form' }) {
+export const SubscriberService = {  async add(repo, siteId, { email, name = '', source = 'site-form' }) {
     const clean = String(email || '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(clean)) throw new Error('Not a valid email address.');
     const dupe = await repo.query('subscribers', (s) => s.siteId === siteId && s.email === clean);
@@ -152,6 +154,52 @@ export const SubscriberService = {
       ...(subscribers || []).map((s) => [s.email, s.name, s.status, s.source, s.createdAt].map(q).join(','))].join('\n') + '\n';
   },
 };
+
+export const WxrService = {
+  // Imports WordPress export items through the normal domain services, so every
+  // article gets sanitized, slugged, validated, and revisioned like local content.
+  async importParsed(repo, siteId, parsed) {
+    const authorIdByName = new Map();
+    for (const a of await repo.query('authors', (x) => x.siteId === siteId)) {
+      authorIdByName.set(a.name.toLowerCase(), a.id);
+    }
+    const ensureAuthor = async (login, name) => {
+      const key = String(name || login || 'Author').toLowerCase();
+      if (authorIdByName.has(key)) return authorIdByName.get(key);
+      const created = await AuthorService.create(repo, siteId, { name: String(name || login || 'Author').slice(0, 120) });
+      authorIdByName.set(key, created.id);
+      return created.id;
+    };
+    for (const a of parsed.authors || []) await ensureAuthor(a.login, a.name);
+    const counts = { articles: 0, pages: 0 };
+    for (const item of parsed.items || []) {
+      const categoryIds = [];
+      for (const name of item.categories || []) {
+        const found = (await repo.query('categories', (c) => c.siteId === siteId && c.name.toLowerCase() === String(name).toLowerCase()))[0];
+        categoryIds.push(found ? found.id : (await TaxonomyService.createCategory(repo, siteId, { name })).id);
+      }
+      const tagIds = [];
+      for (const name of item.tags || []) {
+        const found = (await repo.query('tags', (t) => t.siteId === siteId && t.name.toLowerCase() === String(name).toLowerCase()))[0];
+        tagIds.push(found ? found.id : (await TaxonomyService.createTag(repo, siteId, { name })).id);
+      }
+      const authorId = await ensureAuthor(item.creator, item.creator);
+      const pubDate = item.date && !Number.isNaN(Date.parse(item.date)) ? new Date(item.date).toISOString() : '';
+      if (item.type === 'page') {
+        await PageService.create(repo, siteId, { title: item.title, content: item.content, excerpt: item.excerpt, status: item.status, publishDate: pubDate, authorId });
+        counts.pages++;
+      } else {
+        await ArticleService.create(repo, siteId, {
+          title: item.title, excerpt: item.excerpt, content: item.content, status: item.status,
+          publishDate: pubDate, authorId, categoryIds, tagIds, canonicalUrl: item.link || '',
+        });
+        counts.articles++;
+      }
+    }
+    await AuditService.log(repo, { action: 'wxr.import', entityType: 'site', entityId: siteId, detail: `${counts.articles} articles, ${counts.pages} pages` });
+    return counts;
+  },
+};
 export const TemplateService = {
   async save(repo, siteId, partial) { const t = createTemplate({ ...partial, siteId }); await repo.put('templates', t); return t; },
   async setActive(repo, siteId, templateId) {
@@ -159,8 +207,44 @@ export const TemplateService = {
     for (const s of await repo.query('sites', (x) => x.id === siteId)) await repo.put('sites', { ...s, activeTemplateId: templateId, updatedAt: nowIso() });
   },
 };
-export const SearchService = {
-  search(docs, q) {
+export const InsightsService = {
+  // Jetpack-style stats computed LOCALLY from your own content — no tracking,
+  // no external calls, works offline. All numbers, no opinions.
+  summarize({ articles = [], comments = [], subscribers = [], categories = [], deployments = [] } = {}) {
+    const live = articles.filter((a) => ['Published', 'Modified'].includes(a.status));
+    const totalWords = live.reduce((n, a) => n + (a.wordCount || 0), 0);
+    const catName = new Map((categories || []).map((c) => [c.id, c.name]));
+    const perCategory = new Map();
+    for (const a of live) for (const id of a.categoryIds || []) perCategory.set(id, (perCategory.get(id) || 0) + 1);
+    const weeks = [];
+    const monday = new Date();
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    for (let i = 7; i >= 0; i--) {
+      const start = new Date(monday);
+      start.setDate(start.getDate() - i * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      const count = live.filter((a) => { const d = new Date(a.publishDate || a.createdAt); return d >= start && d < end; }).length;
+      weeks.push({ week: start.toISOString().slice(0, 10), count });
+    }
+    return {
+      published: live.length,
+      drafts: articles.filter((a) => a.status === 'Draft').length,
+      totalWords,
+      avgReading: live.length ? Math.round(live.reduce((n, a) => n + (a.readingTime || 0), 0) / live.length) : 0,
+      commentsApproved: comments.filter((c) => c.status === 'Approved').length,
+      commentsPending: comments.filter((c) => c.status === 'Pending').length,
+      subscribers: subscribers.filter((s) => s.status === 'Active').length,
+      deployments: deployments.length,
+      perCategory: [...perCategory.entries()].map(([id, count]) => ({ name: catName.get(id) || id, count })).sort((a, b) => b.count - a.count),
+      perWeek: weeks,
+      streakWeeks: weeks.slice().reverse().findIndex((w) => w.count === 0),
+    };
+  },
+};
+
+export const SearchService = {  search(docs, q) {
     const needle = String(q || '').toLowerCase().trim();
     if (!needle) return [];
     return docs.filter((d) => `${d.title} ${d.excerpt} ${d.content} ${(d.tags || []).join(' ')}`.toLowerCase().includes(needle)).slice(0, 50);

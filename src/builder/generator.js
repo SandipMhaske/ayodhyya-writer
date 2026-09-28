@@ -16,8 +16,16 @@ export function contactForm(site, slug) {
   if (!endpoint) return '<p>Contact form opening soon — email us instead.</p>';
   return `<form class="contact-form" action="${escapeHtml(endpoint)}" method="post"><label>Name<input name="name" maxlength="120" autocomplete="name" required></label><label>Email<input type="email" name="email" autocomplete="email" required></label><label>Message<textarea name="message" rows="6" required maxlength="10000"></textarea></label><button type="submit">Send message</button></form>`;
 }
+export function consentBlock(site) {
+  // GDPR-style cookie notice. Renders hidden; template script.js reveals it until
+  // consent is stored (localStorage, per device). No tracking involved either way.
+  const cfg = site?.privacy?.cookie;
+  if (!cfg?.enabled) return '';
+  return `<div class="cookiebanner" id="cookiebanner" hidden><p>${escapeHtml(cfg.text || 'This site uses minimal cookies for basic functionality.')}</p><button type="button" data-consent="ok">Got it</button></div>`;
+}
 
-export function newsletterBlock(site) {  const nl = site?.newsletter;
+export function newsletterBlock(site) {
+  const nl = site?.newsletter;
   if (!nl?.enabled) return '';
   const form = nl.endpoint
     ? `<form action="${escapeHtml(nl.endpoint)}" method="post"><label>Email updates<input type="email" name="email" required autocomplete="email"></label> <button type="submit">Subscribe</button></form>`
@@ -286,6 +294,15 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   const redirects = (site.redirects || []).filter((r) => r?.from && r?.to);
   files.set('redirects.json', JSON.stringify(redirects, null, 2));
 
+  // Site-wide cookie banner, injected at the end of every HTML page uniformly.
+  const banner = consentBlock(site);
+  if (banner) {
+    for (const [p, content] of files) {
+      if (typeof content === 'string' && p.endsWith('.html') && content.includes('</body>')) {
+        files.set(p, content.replace('</body>', `${banner}</body>`));
+      }
+    }
+  }
   const contentHash = hashContent([...files.entries()].map(([p, c]) => `${p}:${typeof c === 'string' ? c.length : 0}:${fnvSafe(c)}`));
   return { files, contentHash, sitemapUrls, publishedCount: published.length };
 }

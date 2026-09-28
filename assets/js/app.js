@@ -4,7 +4,7 @@ import { escapeHtml, slugify, wordCountOf, readingTimeMinutes, stripTags } from 
 import { AWS_REGIONS, validateBucket, validateRegion, validateDomain, validateDistributionId, validateAcmArn, validateAccountId, validateHostedZoneId, defaultBucketFor, buildProfile, cfnDeployCommand } from '../../src/core/utils/awsWizard.js';
 import { markdownToHtml, htmlToMarkdown } from '../../src/core/utils/markdown.js';
 import { ARTICLE_STATUSES } from '../../src/core/models/models.js';
-import { ArticleService, PageService, TaxonomyService, AuthorService, MediaService, TemplateService, SearchService, BackupService, AuditService, CommentService, SubscriberService } from '../../src/core/services/services.js';
+import { ArticleService, PageService, TaxonomyService, AuthorService, MediaService, TemplateService, SearchService, BackupService, AuditService, CommentService, SubscriberService, WxrService, InsightsService } from '../../src/core/services/services.js';
 import { createRepository } from '../../src/storage/repository.js';
 import { sanitizeHtml } from '../../src/security/sanitize.js';
 import { validateUpload, normalizeFilename, scanForSecrets } from '../../src/security/uploads.js';
@@ -16,6 +16,7 @@ import { assist } from '../../src/ai/assist.js';
 import { encryptBackupBrowser, decryptBackupBrowser, isEncryptedBackupBrowser } from '../../src/security/backupCryptoBrowser.js';
 import { analyzeSeo } from '../../src/seo/analyzer.js';
 import { fetchArticle } from '../../src/core/utils/fetchArticle.js';
+import { parseWxr, wxrSummary } from '../../src/core/utils/wxr.js';
 import { diffRevision, renderDiff } from '../../src/core/utils/diff.js';
 import { downloadImages } from '../../src/media/importImages.js';
 
@@ -169,7 +170,7 @@ async function route() {
 
 /* ---------- dashboard ---------- */
 async function vDashboard() {
-  const [articles, pages, media, deployments, s, comments, subs] = await Promise.all([
+  const [articles, pages, media, deployments, s, comments, subs, categories] = await Promise.all([
     state.repo.query('articles', (a) => a.siteId === state.siteId),
     state.repo.query('pages', (p) => p.siteId === state.siteId),
     state.repo.all('media'),
@@ -177,7 +178,9 @@ async function vDashboard() {
     site(),
     state.repo.query('comments', (c) => c.siteId === state.siteId),
     state.repo.query('subscribers', (x) => x.siteId === state.siteId && x.status === 'Active'),
+    state.repo.query('categories', (c) => c.siteId === state.siteId),
   ]);
+  const ins = InsightsService.summarize({ articles, comments, subscribers: subs, categories, deployments });
   const drafts = articles.filter((a) => a.status === 'Draft').length;
   const modified = articles.filter((a) => a.status === 'Modified').length;
   const published = articles.filter((a) => ['Published', 'Modified'].includes(a.status)).length;
@@ -200,6 +203,8 @@ async function vDashboard() {
       <div class="card"><h3>Scheduled posts</h3><div class="big">${scheduled.length}</div><div>${dueCount ? `<span class="status-warn">${dueCount} due — publishes on next build</span>` : scheduled.length ? `Next: ${escapeHtml(scheduled[0].title)} (${escapeHtml((scheduled[0].publishDate || '').slice(0, 10))})` : 'None scheduled'}</div></div>
       <div class="card"><h3>Engagement</h3><div>${pendingComments} comment(s) awaiting moderation · ${subs.length} subscriber(s)</div><div><a href="#/organize">Moderate</a></div></div>
     </div>
+    <h2>Insights (computed locally — no tracking)</h2>
+    <div class="card"><div class="row" style="align-items:flex-end;gap:.4rem" aria-label="Posts per week, last 8 weeks">${ins.perWeek.map((w) => `<div title="${w.week}: ${w.count}" style="width:1.75rem;background:var(--accent);border-radius:.25rem .25rem 0 0;height:${Math.max(0.25, w.count * 1.25)}rem"></div>`).join('')}</div><div>${ins.totalWords.toLocaleString()} words published · ~${ins.avgReading} min average read · ${ins.streakWeeks < 0 ? '8+ week' : ins.streakWeeks + '-week'} publishing streak · ${ins.deployments} deployments</div><div>${ins.perCategory.slice(0, 5).map((c) => `${escapeHtml(c.name)} (${c.count})`).join(' · ') || 'No categories yet'}</div></div>
     <h2>Search content (offline)</h2>
     <form id="dash-search" class="row"><input id="dq" placeholder="Search title, excerpt, content…" aria-label="Search content"><button class="btn">Search</button></form>
     <div id="dq-out"></div>
@@ -224,13 +229,31 @@ async function vArticles() {
   ]);
   const byId = new Map(authors.map((a) => [a.id, a.name]));
   view.innerHTML = `
-    <div class="row"><h2 style="margin:0">Articles</h2><span style="flex:1"></span><button class="btn" id="imp-url">Import from URL</button><button class="btn primary" id="new-art">+ New article</button></div>
+    <div class="row"><h2 style="margin:0">Articles</h2><span style="flex:1"></span><button class="btn" id="imp-wxr">Import WordPress</button><button class="btn" id="imp-url">Import from URL</button><button class="btn primary" id="new-art">+ New article</button></div>
+    <input type="file" id="wxr-file" accept=".xml,text/xml" hidden aria-label="WordPress export file">
     <div class="row"><input id="aq" placeholder="Filter…" aria-label="Filter articles"></div>
     <table><thead><tr><th>Title</th><th>Slug</th><th>Status</th><th>Author</th><th>Updated</th></tr></thead>
     <tbody id="rows">${articles.map((a) => `<tr data-t="${escapeHtml((a.title + a.slug).toLowerCase())}"><td><a href="#/articles/${a.id}">${escapeHtml(a.title) || '(untitled)'}</a></td><td>${escapeHtml(a.slug)}</td><td><span class="badge ${a.status}">${a.status}</span></td><td>${escapeHtml(byId.get(a.authorId) || '—')}</td><td>${escapeHtml((a.updatedAt || '').slice(0, 10))}</td></tr>`).join('')}</tbody></table>`;
   $('#new-art').onclick = async () => {
     const a = await ArticleService.create(state.repo, state.siteId, { title: 'Untitled article' });
     location.hash = '#/articles/' + a.id;
+  };
+  $('#imp-wxr').onclick = () => $('#wxr-file').click();
+  $('#wxr-file').onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    let parsed;
+    try { parsed = parseWxr(await f.text()); }
+    catch (err) { toast('Not a WordPress export: ' + err.message); return; }
+    const sum = wxrSummary(parsed);
+    modal(`<h2>Import from WordPress?</h2><p>${sum.posts} post(s), ${sum.pages} page(s), ${sum.authors} author(s). Everything arrives as <strong>Draft</strong> (pages keep their status), sanitized and linked.</p><div class="row"><button class="btn" id="wxr-cancel">Cancel</button><button class="btn primary" id="wxr-go">Import</button></div>`);
+    $('#wxr-cancel').onclick = () => $('#modal').close();
+    $('#wxr-go').onclick = async () => {
+      const counts = await WxrService.importParsed(state.repo, state.siteId, parsed);
+      $('#modal').close();
+      toast(`Imported ${counts.articles} article(s), ${counts.pages} page(s). Review drafts, then publish.`);
+      route();
+    };
   };
   $('#imp-url').onclick = () => {
     modal(`<h2>Import article from URL</h2><p>The page is fetched, boilerplate stripped, scripts removed, and saved as a <strong>Draft</strong> with canonical pointing at the source. Private/local hosts are blocked.</p>
@@ -701,6 +724,9 @@ async function vSite() {
     <label>Signup heading<input id="s-nl-h" value="${escapeHtml(s.newsletter?.heading || 'Newsletter')}"></label>
     <label>Signup text<textarea id="s-nl-t" rows="2">${escapeHtml(s.newsletter?.text || '')}</textarea></label>
     <div class="row"><button type="button" class="btn" id="sub-csv">Download subscribers CSV</button></div>
+    <h3>Privacy &amp; consent</h3>
+    <label><input type="checkbox" id="s-cookie-on" ${s.privacy?.cookie?.enabled ? 'checked' : ''}> Show cookie notice on the public site</label>
+    <label>Notice text<textarea id="s-cookie-t" rows="2">${escapeHtml(s.privacy?.cookie?.text || 'This site uses minimal cookies for basic functionality.')}</textarea></label>
     <h3>Redirects (old URL → new URL, keeps SEO juice on slug changes)</h3>
     <div id="red-list"></div>
     <div class="row"><button type="button" class="btn" id="red-add">+ Add redirect</button></div>
@@ -746,6 +772,7 @@ async function vSite() {
       adsense: { publisherId: $('#s-pub').value.trim(), slots: { ...s.adsense?.slots, 'after-article': $('#s-slot').value.trim() } },
       comments: { enabled: $('#s-com-on').checked, endpoint: $('#s-com-ep').value.trim(), heading: 'Comments' },
       newsletter: { enabled: $('#s-nl-on').checked, endpoint: $('#s-nl-ep').value.trim(), heading: $('#s-nl-h').value.trim() || 'Newsletter', text: $('#s-nl-t').value },
+      privacy: { ...s.privacy, cookie: { enabled: $('#s-cookie-on').checked, text: $('#s-cookie-t').value } },
       redirects: collected, updatedAt: new Date().toISOString(), version: (s.version || 1) + 1,
     });
     await AuditService.log(state.repo, { action: 'site.update', entityType: 'site', entityId: s.id, detail: s.name });
