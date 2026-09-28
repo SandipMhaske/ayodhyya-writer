@@ -544,7 +544,7 @@ async function vMedia() {
   view.innerHTML = `<div class="row"><h2 style="margin:0">Media</h2><span style="flex:1"></span><input type="file" id="up" accept="image/*,.svg" aria-label="Upload image"></div>
     <p>JPG · PNG · WebP · AVIF · SVG (strictly sanitized) · GIF. Validated by signature, not extension. Variants (400/800/1200/1600) are referenced at build time.</p>
     <table><thead><tr><th>File</th><th>Type</th><th>Size</th><th>Alt</th><th>Markup</th></tr></thead><tbody>
-    ${media.map((m) => `<tr><td>${escapeHtml(m.filename)}</td><td>${escapeHtml(m.mimeType)}</td><td>${Math.round((m.size || 0) / 1024)} KB</td><td>${escapeHtml(m.altText || '—')}</td><td><button class="btn" data-copy="${m.id}">Copy &lt;picture&gt;</button></td></tr>`).join('') || '<tr><td colspan="5">No media yet — upload while offline.</td></tr>'}
+    ${media.map((m) => `<tr><td>${escapeHtml(m.filename)}</td><td>${escapeHtml(m.mimeType)}</td><td>${Math.round((m.size || 0) / 1024)} KB</td><td>${escapeHtml(m.altText || '—')}</td><td><span class="row"><button class="btn" data-medit="${m.id}">Edit</button><button class="btn" data-copy="${m.id}">Copy &lt;picture&gt;</button></span></td></tr>`).join('') || '<tr><td colspan="5">No media yet — upload while offline.</td></tr>'}
     </tbody></table>`;
   $('#up').onchange = async (e) => {
     const f = e.target.files[0];
@@ -557,6 +557,18 @@ async function vMedia() {
     toast('Media registered locally.');
     route();
   };
+  document.querySelectorAll('[data-medit]').forEach((b) => (b.onclick = async () => {
+    const m = await state.repo.get('media', b.dataset.medit);
+    if (!m) return;
+    modal(`<h2>Edit metadata — ${escapeHtml(m.filename)}</h2><form class="grid" id="mf"><label>Alt text (accessibility)<input id="m-alt" value="${escapeHtml(m.altText || '')}"></label><label>Caption<input id="m-cap" value="${escapeHtml(m.caption || '')}"></label><label>Title<input id="m-title" value="${escapeHtml(m.title || '')}"></label><div class="row"><button class="btn primary">Save</button></div></form>`);
+    $('#mf').onsubmit = async (e) => {
+      e.preventDefault();
+      await MediaService.update(state.repo, m.id, { altText: $('#m-alt').value, caption: $('#m-cap').value, title: $('#m-title').value });
+      $('#modal').close();
+      toast('Media metadata saved.');
+      route();
+    };
+  }));
   document.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = async () => {
     const m = await state.repo.get('media', b.dataset.copy);
     const stem = '/assets/images/' + m.filename.replace(/\.[a-z0-9]+$/i, '');

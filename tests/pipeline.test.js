@@ -67,4 +67,13 @@ describe('integration: store → build pipeline', () => {
     assert.equal((await repo.get('articles', future.id)).status, 'Scheduled');
     assert.ok((await repo.all('audit')).some((e) => e.action === 'articles.publishDue'), 'audit trail recorded');
   });
+
+  it('emits a human-readable sitemap page mirroring the XML', async () => {
+    const { files } = await generateSite(testInput());
+    const page = files.get('sitemap/index.html');
+    assert.ok(page, 'sitemap page generated');
+    assert.ok(page.includes('/articles/aws-lambda-guide/'), 'article linked');
+    assert.ok(page.includes('/about/'), 'static page linked');
+    assert.ok((page.match(/<script/g) || []).length <= 1, 'at most the template asset script');
+  });
 });

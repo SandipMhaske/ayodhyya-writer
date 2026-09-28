@@ -86,6 +86,18 @@ export const AuthorService = {
 };
 export const MediaService = {
   async register(repo, siteId, meta) { const m = createMedia({ ...meta, siteId }); await repo.put('media', m); return m; },
+  async update(repo, id, patch) {
+    // Alt/caption/title fixes — the accessibility repair path for health warnings.
+    const cur = await repo.get('media', id);
+    if (!cur) throw new Error('Media not found: ' + id);
+    const allowed = (({ altText, caption, title }) => ({ altText, caption, title }))(patch);
+    const next = { ...cur };
+    for (const [k, v] of Object.entries(allowed)) if (v !== undefined) next[k] = String(v).slice(0, 500);
+    next.updatedAt = nowIso();
+    next.version = (cur.version || 1) + 1;
+    await repo.put('media', next);
+    return next;
+  },
 };
 export const CommentService = {
   // Reader comments are UNTRUSTED DATA: sanitized on the way in, escaped on render.

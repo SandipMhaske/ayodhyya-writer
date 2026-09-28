@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { shareBlock, relatedArticles, prevNext, relatedBlock, prevNextBlock } from '../src/builder/generator.js';
+import { shareBlock, relatedArticles, prevNext, relatedBlock, prevNextBlock, cardMeta } from '../src/builder/generator.js';
 
 const mk = (slug, date, cats = [], tags = []) => ({ slug, title: `Title ${slug} <b>`, excerpt: 'e', publishDate: date, createdAt: date, categoryIds: cats, tagIds: tags });
 const pub = [
@@ -37,6 +37,13 @@ describe('reading ux', () => {
   it('related block renders nothing when empty', () => {
     assert.equal(relatedBlock([]), '');
     assert.ok(relatedBlock([pub[1]]).includes('/articles/two/'));
+  });
+  it('card meta shows reading time and comment counts', () => {
+    const counts = new Map([['one', 1], ['two', 5]]);
+    assert.ok(cardMeta(pub[0], counts).includes('1 min read'));
+    assert.ok(cardMeta(pub[0], counts).includes('1 comment') && !cardMeta(pub[0], counts).includes('1 comments'));
+    assert.ok(cardMeta(pub[1], counts).includes('5 comments'));
+    assert.ok(!cardMeta(pub[2], counts).includes('comment'), 'zero count stays silent');
   });
   it('exposes reading time on cards and article bylines', async () => {
     const { generateSite } = await import('../src/builder/generator.js');

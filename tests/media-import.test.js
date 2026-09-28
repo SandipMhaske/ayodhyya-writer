@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { downloadImages, suggestFilename } from '../src/media/importImages.js';
+import { MemoryStore } from '../src/storage/repository.js';
+import { MediaService } from '../src/core/services/services.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
@@ -42,6 +44,20 @@ describe('image import', () => {
   it('suggests safe filenames from URLs', () => {
     assert.equal(suggestFilename('https://x.example/a/b/Photo%201.JPG'), 'photo-1.jpg');
     assert.equal(suggestFilename('not a url'), 'image', 'unparseable input falls back');
+  });
+});
+
+describe('media metadata editing', () => {
+  it('updates alt/caption/title only, caps length, rejects unknown ids', async () => {
+    const repo = new MemoryStore();
+    const m = await MediaService.register(repo, 's1', { filename: 'a.png', mimeType: 'image/png', size: 100, altText: '' });
+    const next = await MediaService.update(repo, m.id, { altText: 'A photo', caption: 'Cap', title: 'T', size: 999999, filename: 'evil.png', dataUrl: 'x'.repeat(600) });
+    assert.equal(next.altText, 'A photo');
+    assert.equal(next.size, 100, 'binary fields immutable');
+    assert.equal(next.filename, 'a.png', 'identity fields immutable');
+    assert.ok(next.dataUrl.length <= 500, 'oversized values truncated');
+    assert.ok(next.version > m.version);
+    await assert.rejects(MediaService.update(repo, 'missing', { altText: 'x' }), /not found/);
   });
 });
 

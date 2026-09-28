@@ -69,10 +69,17 @@ export function prevNext(article, published) {
   return { prev: ordered[i - 1] || null, next: ordered[i + 1] || null };
 }
 
-export function relatedBlock(list) {
+export function cardMeta(a, commentCount = new Map()) {
+  const bits = [`${a.readingTime || 1} min read`];
+  const n = commentCount.get(a.slug) || 0;
+  if (n > 0) bits.push(`${n} comment${n === 1 ? '' : 's'}`);
+  return `<p class="byline">${bits.join(' · ')}</p>`;
+}
+
+export function relatedBlock(list, commentCount = new Map()) {
   if (!list.length) return '';
   return `<section class="related"><h2>Related reading</h2><div class="grid">${list.map((a) =>
-    `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p><p class="byline">${a.readingTime || 1} min read</p></article>`).join('')}</div></section>`;
+    `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p>${cardMeta(a, commentCount)}</article>`).join('')}</div></section>`;
 }
 
 export function prevNextBlock({ prev, next }) {
@@ -151,6 +158,10 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     (a.status === 'Scheduled' && a.publishDate && !Number.isNaN(Date.parse(a.publishDate)) && Date.parse(a.publishDate) <= at);
   const published = articles.filter(isLive)
     .sort((a, b) => String(b.publishDate || b.createdAt).localeCompare(String(a.publishDate || a.createdAt)));
+  const commentCount = new Map();
+  for (const c of comments) {
+    if (c.status === 'Approved' && c.articleSlug) commentCount.set(c.articleSlug, (commentCount.get(c.articleSlug) || 0) + 1);
+  };
 
   const baseCtx = (extra = {}) => ({
     site: { name: site.name, description: site.description || site.tagline, url: site.url, tagline: site.tagline },
@@ -164,7 +175,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   // Homepage
   {
     const cards = published.slice(0, 20).map((a) =>
-      `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p><p class="byline">${a.readingTime || 1} min read</p></article>`).join('\n');
+      `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p>${cardMeta(a, commentCount)}</article>`).join('\n');
     const url = canonicalFor(site.url, '/');
     const head = seoHead({ site, title: `${site.name} — ${site.tagline || ''}`.trim(), description: site.seo?.defaultDescription || site.description, canonical: url, jsonldObjects: [websiteJsonLd({ site })], extra: `${cssLink}\n${adsenseHead(site)}` });
     const body = layout('index.html', baseCtx({ page: { title: site.name }, content: cards + '\n' + newsletterBlock(site), 'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name }));
@@ -193,7 +204,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
       ],
       extra: `${cssLink}\n${adsenseHead(site)}`,
     });
-    const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}\n${commentsSection({ site, slug: a.slug, comments })}\n${newsletterBlock(site)}\n${relatedBlock(relatedArticles(a, published))}\n${prevNextBlock(prevNext(a, published))}\n${shareBlock({ url, title: a.title })}`;
+    const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}\n${commentsSection({ site, slug: a.slug, comments })}\n${newsletterBlock(site)}\n${relatedBlock(relatedArticles(a, published), commentCount)}\n${prevNextBlock(prevNext(a, published))}\n${shareBlock({ url, title: a.title })}`;
     const ctx = baseCtx({
       article: { title: a.title, content, author: author?.name || '', date: a.publishDate || a.createdAt, excerpt: a.excerpt, readingTime: a.readingTime || 1, wordCount: a.wordCount || 0 },
       page: { title: a.title, content },
@@ -210,7 +221,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     const list = published.filter((a) => (a.categoryIds || []).includes(c.id));
     const url = canonicalFor(site.url, `/category/${c.slug}/`);
     const head = seoHead({ site, title: `${c.name} — ${site.name}`, description: c.description, canonical: url, extra: cssLink });
-    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2></article>`).join('\n');
+    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n');
     files.set(`category/${c.slug}/index.html`, minifyHtml(injectHead(layout('category.html', baseCtx({ page: { title: c.name }, content: cards, category: c, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
     sitemapUrls.push({ loc: url, lastmod: isoDate(c.updatedAt) });
   }
@@ -218,7 +229,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     const list = published.filter((a) => (a.tagIds || []).includes(t.id));
     const url = canonicalFor(site.url, `/tag/${t.slug}/`);
     const head = seoHead({ site, title: `${t.name} — ${site.name}`, canonical: url, extra: cssLink });
-    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2></article>`).join('\n');
+    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n');
     files.set(`tag/${t.slug}/index.html`, minifyHtml(injectHead(layout('tag.html', baseCtx({ page: { title: t.name }, content: cards, tag: t, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
   }
 
@@ -229,6 +240,17 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     const body = sanitizeHtml(p.contentFormat === 'markdown' ? markdownToHtml(p.content) : p.content);
     files.set(`${p.slug}/index.html`, minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: p.title, content: body }, content: body, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
     sitemapUrls.push({ loc: url, lastmod: isoDate(p.updatedAt) });
+  }
+
+  // Human-readable sitemap page (mirrors sitemap.xml for visitors).
+  {
+    const rows = sitemapUrls.map((u) => {
+      const rel = String(u.loc).replace(String(site.url).replace(/\/+$/, ''), '') || '/';
+      return `<li><a href="${escapeHtml(rel)}">${escapeHtml(rel)}</a></li>`;
+    }).join('\n');
+    const head = seoHead({ site, title: `Sitemap — ${site.name}`, canonical: canonicalFor(site.url, '/sitemap/'), extra: cssLink });
+    const body = `<ul>${rows}</ul>`;
+    files.set('sitemap/index.html', minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: 'Sitemap', content: body }, content: body, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
   }
 
   // Search page + index
