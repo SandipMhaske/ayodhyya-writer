@@ -72,6 +72,10 @@ export async function openDatabase(dbPath = process.env.AYODHYYA_DB || DB_PATH) 
       await store.put('templates', t);
     }
   }
+  // Backfill built-in themes missing from older databases (additive only — never overwrites).
+  for (const name of ['default', 'midnight']) {
+    if (!await store.get('templates', `tpl_${name}_v1`)) await store.put('templates', loadTemplateFiles(name));
+  }
   return store;
 }
 

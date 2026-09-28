@@ -34,6 +34,13 @@ async function boot() {
   const seed = await fetch('./seed/seed-data.json').then((r) => r.json()).catch(() => ({ sites: [] }));
   if (!seed.templates?.length) seed.templates = [await loadDefaultTemplate(seed.sites[0]?.id)];
   state.repo = await createRepository({ seed: toSeedCollections(seed) });
+  // Backfill built-in themes missing from older local databases (additive only).
+  const firstSiteId = (await state.repo.all('sites'))[0]?.id || '';
+  for (const name of ['default', 'midnight']) {
+    if (!await state.repo.get('templates', `tpl_${name}_v1`)) {
+      await state.repo.put('templates', await loadBuiltinTemplate(name, firstSiteId));
+    }
+  }
   const sites = await state.repo.all('sites');
   state.siteId = sites[0]?.id || null;
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(() => {});
@@ -49,12 +56,17 @@ function toSeedCollections(seed) {
   return cols;
 }
 
-async function loadDefaultTemplate(siteId) {
+async function loadBuiltinTemplate(name, siteId) {
   const files = {};
   for (const f of ['index.html', 'article.html', 'category.html', 'tag.html', 'search.html', 'page.html', '404.html', 'style.css', 'script.js']) {
-    try { files[f] = await fetch('./src/templates/default/' + f).then((r) => (r.ok ? r.text() : '')); } catch { files[f] = ''; }
+    try { files[f] = await fetch('./src/templates/' + name + '/' + f).then((r) => (r.ok ? r.text() : '')); } catch { files[f] = ''; }
   }
-  return { id: 'tpl_default_v1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1, siteId: siteId || '', name: 'Default', versionTag: 'v1', active: true, files };
+  let meta = { name, versionTag: 'v1' };
+  try { meta = await fetch('./src/templates/' + name + '/template.json').then((r) => r.json()); } catch { /* defaults */ }
+  return { id: `tpl_${name}_v1`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1, siteId: siteId || '', name: meta.name || name, versionTag: meta.versionTag || 'v1', active: true, files };
+}
+async function loadDefaultTemplate(siteId) {
+  return loadBuiltinTemplate('default', siteId);
 }
 
 /* ---------- shell ---------- */
@@ -533,12 +545,31 @@ async function vTemplates() {
   const cur = tpls.find((t) => t.id === s?.activeTemplateId) || tpls[0];
   view.innerHTML = `<div class="row"><h2 style="margin:0">Templates</h2><span style="flex:1"></span>
     <button class="btn" id="dup">Duplicate</button><button class="btn" id="exp">Export</button><button class="btn primary" id="act">Set active</button></div>
+    <div class="cards" id="gallery">${tpls.map((t) => `<div class="card"><h3>${escapeHtml(t.name)} ${t.id === s?.activeTemplateId ? '<span class="badge Published">Active</span>' : ''}</h3><div>${escapeHtml(t.versionTag || '')} · ${Object.keys(t.files || {}).length} files</div><div class="row"><button class="btn" data-tprev="${t.id}">Preview</button>${t.id === s?.activeTemplateId ? '' : `<button class="btn primary" data-tuse="${t.id}">Use this theme</button>`}</div></div>`).join('')}</div>
     <div class="row"><label>Template<select id="ts">${tpls.map((t) => `<option value="${t.id}" ${cur?.id === t.id ? 'selected' : ''}>${escapeHtml(t.name)} ${escapeHtml(t.versionTag || '')}</option>`).join('')}</select></label>
     <label>File<select id="tf">${Object.keys(cur?.files || {}).map((f) => `<option>${f}</option>`).join('')}</select></label></div>
     <textarea id="tc" class="code" rows="22" aria-label="Template source"></textarea>
     <div class="row"><button class="btn primary" id="tsave">Save template</button><span>Versioned · preview via Preview tab · trusted site-owner code.</span></div>`;
   const load = () => { $('#tc').value = cur?.files[$('#tf').value] || ''; };
   $('#ts').onchange = () => route();
+  document.querySelectorAll('[data-tprev]').forEach((b) => (b.onclick = async () => {
+    const t = await state.repo.get('templates', b.dataset.tprev);
+    if (!t) return;
+    const input = await fullInput();
+    const { files } = await generateSite({ ...input, template: t });
+    state.dist = files;
+    const w = window.open('about:blank');
+    if (!w) { toast('Popup blocked — allow popups, then try again.'); return; }
+    w.document.write('<p style="font-family:system-ui;padding:2rem">Building theme preview…</p>');
+    const site = buildBlobSite(files);
+    state.previewSite = site;
+    w.location.href = site.urls.get('index.html');
+  }));
+  document.querySelectorAll('[data-tuse]').forEach((b) => (b.onclick = async () => {
+    await TemplateService.setActive(state.repo, state.siteId, b.dataset.tuse);
+    toast('Theme activated — preview or publish to see it live.');
+    route();
+  }));
   $('#tf').onchange = load;
   load();
   $('#tsave').onclick = async () => {

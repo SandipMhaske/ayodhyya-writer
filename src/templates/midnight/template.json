@@ -1,0 +1,6 @@
+{
+  "name": "Midnight",
+  "versionTag": "v1",
+  "description": "Dark editorial theme. Serif headlines, generous whitespace, amber accents. Minimal JS, WCAG-aware contrast.",
+  "files": ["index.html", "article.html", "category.html", "tag.html", "search.html", "page.html", "404.html", "style.css", "script.js"]
+}
