@@ -1,6 +1,6 @@
 /* Ayodhyya Writer service worker — offline-first app shell cache.
    Never caches sensitive data; deployment secrets are never in cache. */
-const CACHE = 'ayodhyya-writer-v8';
+const CACHE = 'ayodhyya-writer-v9';
 const APP_SHELL = [
   './',
   './index.html',

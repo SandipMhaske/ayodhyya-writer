@@ -31,6 +31,58 @@ export function commentsSection({ site, slug, comments }) {
   return `<section class="comments"><h2>Comments${approved.length ? ` (${approved.length})` : ''}</h2>${list || '<p>No comments yet.</p>'}${form}</section>`;
 }
 
+export function shareBlock({ url, title }) {
+  // Plain links (no JS needed) + progressive-enhancement buttons handled by template script.js.
+  const u = encodeURIComponent(url);
+  const t = encodeURIComponent(title);
+  const link = (href, label) => `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
+  return `<section class="share"><h2>Share this article</h2><div class="row">`
+    + `<button type="button" data-share="native" data-url="${escapeHtml(url)}" data-title="${escapeHtml(title)}">Share…</button>`
+    + `<button type="button" data-share="copy" data-url="${escapeHtml(url)}">Copy link</button>`
+    + link(`https://twitter.com/intent/tweet?text=${t}&url=${u}`, 'X')
+    + link(`https://www.facebook.com/sharer/sharer.php?u=${u}`, 'Facebook')
+    + link(`https://www.linkedin.com/sharing/share-offsite/?url=${u}`, 'LinkedIn')
+    + link(`https://wa.me/?text=${t}%20${u}`, 'WhatsApp')
+    + link(`https://t.me/share/url?url=${u}&text=${t}`, 'Telegram')
+    + `</div></section>`;
+}
+
+export function relatedArticles(article, published, count = 3) {
+  const cat = (article.categoryIds || [])[0];
+  const tags = new Set(article.tagIds || []);
+  return published
+    .filter((a) => a.slug !== article.slug)
+    .map((a) => ({
+      a,
+      score: ((a.categoryIds || [])[0] === cat && cat ? 2 : 0) + (a.tagIds || []).filter((t) => tags.has(t)).length,
+    }))
+    .filter((x) => x.score > 0)
+    .sort((x, y) => y.score - x.score || String(y.a.publishDate || y.a.createdAt).localeCompare(String(x.a.publishDate || x.a.createdAt)))
+    .slice(0, count)
+    .map((x) => x.a);
+}
+
+export function prevNext(article, published) {
+  const ordered = [...published].sort((a, b) => String(a.publishDate || a.createdAt).localeCompare(String(b.publishDate || b.createdAt)));
+  const i = ordered.findIndex((a) => a.slug === article.slug);
+  if (i < 0) return { prev: null, next: null };
+  return { prev: ordered[i - 1] || null, next: ordered[i + 1] || null };
+}
+
+export function relatedBlock(list) {
+  if (!list.length) return '';
+  return `<section class="related"><h2>Related reading</h2><div class="grid">${list.map((a) =>
+    `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p></article>`).join('')}</div></section>`;
+}
+
+export function prevNextBlock({ prev, next }) {
+  if (!prev && !next) return '';
+  return `<nav class="prevnext" aria-label="More articles"><div class="row">`
+    + (prev ? `<a href="/articles/${prev.slug}/">← ${escapeHtml(prev.title)}</a>` : '<span></span>')
+    + (next ? `<a href="/articles/${next.slug}/">${escapeHtml(next.title)} →</a>` : '<span></span>')
+    + `</div></nav>`;
+}
+
 export function articleBody(article) {
   const raw = article.contentFormat === 'markdown' ? markdownToHtml(article.content) : String(article.content || '');
   return sanitizeHtml(raw);
@@ -141,7 +193,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
       ],
       extra: `${cssLink}\n${adsenseHead(site)}`,
     });
-    const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}\n${commentsSection({ site, slug: a.slug, comments })}\n${newsletterBlock(site)}`;
+    const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}\n${commentsSection({ site, slug: a.slug, comments })}\n${newsletterBlock(site)}\n${relatedBlock(relatedArticles(a, published))}\n${prevNextBlock(prevNext(a, published))}\n${shareBlock({ url, title: a.title })}`;
     const ctx = baseCtx({
       article: { title: a.title, content, author: author?.name || '', date: a.publishDate || a.createdAt, excerpt: a.excerpt },
       page: { title: a.title, content },
