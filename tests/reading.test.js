@@ -38,4 +38,13 @@ describe('reading ux', () => {
     assert.equal(relatedBlock([]), '');
     assert.ok(relatedBlock([pub[1]]).includes('/articles/two/'));
   });
+  it('exposes reading time on cards and article bylines', async () => {
+    const { generateSite } = await import('../src/builder/generator.js');
+    const { loadTemplateFiles } = await import('../tools/lib.mjs');
+    const seed = await import('../seed/seed-data.json', { with: { type: 'json' } }).then((m) => m.default);
+    const input = { site: seed.sites[0], articles: seed.articles, pages: seed.pages, categories: seed.categories, tags: seed.tags, authors: seed.authors, media: [], comments: [], template: loadTemplateFiles('default') };
+    const { files } = await generateSite(input);
+    assert.ok(files.get('index.html').includes('min read'), 'cards show reading time');
+    assert.ok(files.get('articles/aws-lambda-guide/index.html').includes('min read'), 'byline shows reading time');
+  });
 });

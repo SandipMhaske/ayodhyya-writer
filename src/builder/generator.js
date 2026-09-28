@@ -72,7 +72,7 @@ export function prevNext(article, published) {
 export function relatedBlock(list) {
   if (!list.length) return '';
   return `<section class="related"><h2>Related reading</h2><div class="grid">${list.map((a) =>
-    `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p></article>`).join('')}</div></section>`;
+    `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p><p class="byline">${a.readingTime || 1} min read</p></article>`).join('')}</div></section>`;
 }
 
 export function prevNextBlock({ prev, next }) {
@@ -164,7 +164,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   // Homepage
   {
     const cards = published.slice(0, 20).map((a) =>
-      `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p></article>`).join('\n');
+      `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p><p class="byline">${a.readingTime || 1} min read</p></article>`).join('\n');
     const url = canonicalFor(site.url, '/');
     const head = seoHead({ site, title: `${site.name} — ${site.tagline || ''}`.trim(), description: site.seo?.defaultDescription || site.description, canonical: url, jsonldObjects: [websiteJsonLd({ site })], extra: `${cssLink}\n${adsenseHead(site)}` });
     const body = layout('index.html', baseCtx({ page: { title: site.name }, content: cards + '\n' + newsletterBlock(site), 'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name }));
@@ -195,7 +195,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
     });
     const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}\n${commentsSection({ site, slug: a.slug, comments })}\n${newsletterBlock(site)}\n${relatedBlock(relatedArticles(a, published))}\n${prevNextBlock(prevNext(a, published))}\n${shareBlock({ url, title: a.title })}`;
     const ctx = baseCtx({
-      article: { title: a.title, content, author: author?.name || '', date: a.publishDate || a.createdAt, excerpt: a.excerpt },
+      article: { title: a.title, content, author: author?.name || '', date: a.publishDate || a.createdAt, excerpt: a.excerpt, readingTime: a.readingTime || 1, wordCount: a.wordCount || 0 },
       page: { title: a.title, content },
       content,
       toc,
