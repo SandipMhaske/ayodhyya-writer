@@ -32,6 +32,10 @@ Parameters:
   PriceClass:
     Type: String
     Default: PriceClass_100
+  ExtraScriptHosts:
+    Type: String
+    Default: ''
+    Description: 'Space-separated extra script-src hosts (e.g. AdSense/analytics). Only needed when those integrations are enabled; keep empty otherwise.'
 
 Conditions:
   UseWAF: !Equals [!Ref EnableWAF, 'true']
@@ -93,7 +97,11 @@ Resources:
         Name: !Sub '${DomainName}-security-headers'
         SecurityHeadersConfig:
           StrictTransportSecurity: { Override: true, IncludeSubdomains: true, Preload: true, AccessControlMaxAgeSec: 63072000 }
-          ContentSecurityPolicy: { Override: true, ContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'" }
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !Sub
+              - "default-src 'self'; script-src 'self' ${Extra}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: ${Extra}; connect-src 'self' ${Extra}; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"
+              - Extra: !Ref ExtraScriptHosts
           XContentTypeOptions: { Override: true }
           ReferrerPolicy: { Override: true, ReferrerPolicy: strict-origin-when-cross-origin }
           FrameOptions: { Override: true, FrameOption: DENY }

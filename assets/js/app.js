@@ -7,7 +7,7 @@ import { ARTICLE_STATUSES } from '../../src/core/models/models.js';
 import { ArticleService, PageService, TaxonomyService, AuthorService, MediaService, TemplateService, SearchService, BackupService, AuditService, CommentService, SubscriberService, WxrService, InsightsService } from '../../src/core/services/services.js';
 import { createRepository } from '../../src/storage/repository.js';
 import { sanitizeHtml } from '../../src/security/sanitize.js';
-import { validateUpload, normalizeFilename, scanForSecrets } from '../../src/security/uploads.js';
+import { validateUpload, normalizeFilename, scanForSecrets, requiredExtraHosts } from '../../src/security/uploads.js';
 import { generateSite, diffManifest } from '../../src/builder/generator.js';
 import { validateArticle, validateSiteHealth, validateBuildOutput, validateRedirects } from '../../src/core/validators/validators.js';
 import { buildDeploymentManifest } from '../../src/deployment/providers.js';
@@ -126,7 +126,7 @@ async function activeTemplate() {
   return (s?.activeTemplateId && (await state.repo.get('templates', s.activeTemplateId))) || (await state.repo.all('templates'))[0];
 }
 async function fullInput() {
-  const [s, articles, pages, categories, tags, authors, media, comments, t] = await Promise.all([
+  const [s, articles, pages, categories, tags, authors, media, comments, brandFavicon, t] = await Promise.all([
     site(),
     state.repo.query('articles', (a) => a.siteId === state.siteId),
     state.repo.query('pages', (p) => p.siteId === state.siteId),
@@ -135,9 +135,10 @@ async function fullInput() {
     state.repo.query('authors', (a) => a.siteId === state.siteId),
     state.repo.all('media'),
     state.repo.query('comments', (c) => c.siteId === state.siteId),
+    fetch('./assets/icons/icon.svg').then((r) => (r.ok ? r.text() : null)).catch(() => null),
     activeTemplate(),
   ]);
-  return { site: s, articles, pages, categories, tags, authors, media, comments, template: t };
+  return { site: s, articles, pages, categories, tags, authors, media, comments, brandFavicon, template: t };
 }
 
 /* ---------- router ---------- */
@@ -702,12 +703,14 @@ async function vTemplates() {
 /* ---------- site / seo / social / ads ---------- */
 async function vSite() {
   const s = await site();
+  const cspHosts = requiredExtraHosts(s);
   view.innerHTML = `<h2>Website configuration</h2><form class="grid" id="sf">
     <label>Site name<input id="s-name" value="${escapeHtml(s.name)}"></label>
     <label>Tagline<input id="s-tag" value="${escapeHtml(s.tagline || '')}"></label>
     <label>Domain<input id="s-dom" value="${escapeHtml(s.domain || '')}"></label>
     <label>Public URL<input id="s-url" value="${escapeHtml(s.url || '')}"></label>
     <label>Description<textarea id="s-desc" rows="2">${escapeHtml(s.description || '')}</textarea></label>
+    <label>Articles per homepage page<input id="s-ppp" type="number" min="1" max="50" value="${Number(s.postsPerPage) || 10}"></label>
     <label>Primary color<input id="s-c1" value="${escapeHtml(s.theme?.colorPrimary || '#0f172a')}"></label>
     <label>Accent color<input id="s-c2" value="${escapeHtml(s.theme?.colorAccent || '#f59e0b')}"></label>
     <h3>SEO defaults</h3>
@@ -720,7 +723,13 @@ async function vSite() {
     <label>Form endpoint (blank shows “opening soon”)<input id="s-contact" value="${escapeHtml(s.contact?.endpoint || '')}" placeholder="https://forms.example/contact"></label>
     <h3>Google AdSense (public IDs only — never secrets)</h3>
     <label>Publisher ID (ca-pub-…)<input id="s-pub" value="${escapeHtml(s.adsense?.publisherId || '')}" placeholder="ca-pub-0000000000000000"></label>
-    <label>Ad slot — after article<input id="s-slot" value="${escapeHtml(s.adsense?.slots?.['after-article'] || '')}" placeholder="0000000000"></label>
+    ${['header', 'before-article', 'after-article', 'homepage-top', 'homepage-bottom', 'sidebar', 'category'].map((pl) => `<label>Ad slot — ${pl}<input data-slot="${pl}" value="${escapeHtml(s.adsense?.slots?.[pl] || '')}" placeholder="0000000000"></label>`).join('')}
+    <h3>Analytics (emitted only when configured)</h3>
+    <label>Provider<select id="s-anp">${['none', 'ga4', 'plausible', 'umami'].map((p) => `<option value="${p}" ${s.analytics?.provider === p ? 'selected' : ''}>${p === 'none' ? 'None (default, zero tracking)' : p === 'ga4' ? 'Google Analytics 4' : p === 'plausible' ? 'Plausible' : 'Umami'}</option>`).join('')}</select></label>
+    <label>Measurement / website ID<input id="s-anid" value="${escapeHtml(s.analytics?.measurementId || '')}" placeholder="G-XXXXXXX or website id"></label>
+    <label>Host (Plausible/Umami script domain)<input id="s-anhost" value="${escapeHtml(s.analytics?.host || '')}" placeholder="https://plausible.io"></label>
+    <label>Domain (Plausible data-domain)<input id="s-andom" value="${escapeHtml(s.analytics?.domain || s.domain || '')}"></label>
+    <div class="row"><button type="button" class="btn" id="csp-copy">Copy CSP hosts for CloudFormation</button><span id="csp-hosts">${escapeHtml(cspHosts.join(' ') || '(none needed — CSP stays locked down)')}</span></div>
     <h3>Comments</h3>
     <label><input type="checkbox" id="s-com-on" ${s.comments?.enabled ? 'checked' : ''}> Enable comments on articles</label>
     <label>Comment form endpoint (your form service URL — blank shows comments without a form)<input id="s-com-ep" value="${escapeHtml(s.comments?.endpoint || '')}" placeholder="https://forms.example/comments"></label>
@@ -771,11 +780,12 @@ async function vSite() {
     $('#red-err').textContent = '';
     await state.repo.put('sites', {
       ...s, name: $('#s-name').value, tagline: $('#s-tag').value, domain: $('#s-dom').value, url: $('#s-url').value,
-      description: $('#s-desc').value, theme: { ...s.theme, colorPrimary: $('#s-c1').value, colorAccent: $('#s-c2').value },
+      description: $('#s-desc').value, postsPerPage: Math.max(1, Math.min(50, Number($('#s-ppp').value) || 10)), theme: { ...s.theme, colorPrimary: $('#s-c1').value, colorAccent: $('#s-c2').value },
       seo: { ...s.seo, defaultDescription: $('#s-seod').value, robots: $('#s-rob').value },
       social: { ...s.social, twitter: $('#s-tw').value, facebook: $('#s-fb').value },
       contact: { endpoint: $('#s-contact').value.trim() },
-      adsense: { publisherId: $('#s-pub').value.trim(), slots: { ...s.adsense?.slots, 'after-article': $('#s-slot').value.trim() } },
+      adsense: { publisherId: $('#s-pub').value.trim(), slots: Object.fromEntries([...document.querySelectorAll('#sf [data-slot]')].map((el) => [el.dataset.slot, el.value.trim()]).filter(([, v]) => v)) },
+      analytics: { provider: $('#s-anp').value, measurementId: $('#s-anid').value.trim(), host: $('#s-anhost').value.trim().replace(/\/+$/, ''), domain: $('#s-andom').value.trim() },
       comments: { enabled: $('#s-com-on').checked, endpoint: $('#s-com-ep').value.trim(), heading: 'Comments' },
       newsletter: { enabled: $('#s-nl-on').checked, endpoint: $('#s-nl-ep').value.trim(), heading: $('#s-nl-h').value.trim() || 'Newsletter', text: $('#s-nl-t').value },
       privacy: { ...s.privacy, cookie: { enabled: $('#s-cookie-on').checked, text: $('#s-cookie-t').value } },
@@ -788,6 +798,10 @@ async function vSite() {
     const subs = await state.repo.query('subscribers', (x) => x.siteId === state.siteId);
     download(`subscribers-${state.siteId}.csv`, SubscriberService.toCsv(subs), 'text/csv');
     toast(`Exported ${subs.length} subscriber(s). Take the CSV to any email provider.`);
+  };
+  $('#csp-copy').onclick = async () => {
+    await navigator.clipboard?.writeText(cspHosts.join(' ')).catch(() => {});
+    toast(cspHosts.length ? 'Hosts copied — paste into ExtraScriptHosts.' : 'Nothing to copy — no third-party hosts needed.');
   };
   $('#df').onsubmit = async (e) => {
     e.preventDefault();

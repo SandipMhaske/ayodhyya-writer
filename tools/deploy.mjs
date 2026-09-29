@@ -4,7 +4,7 @@
 // Rollback restores the per-deploy content snapshot, rebuilds, and redeploys as a new record.
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadInput, openDatabase, writeDist, publishMediaAssets, arg, ROOT, DIST } from './lib.mjs';
+import { loadInput, openDatabase, writeDist, publishMediaAssets, publishBrandAssets, arg, ROOT, DIST } from './lib.mjs';
 import { generateSite, diffManifest } from '../src/builder/generator.js';
 import { validateArticle, validateBuildOutput, validateRedirects } from '../src/core/validators/validators.js';
 import { scanForSecrets } from '../src/security/uploads.js';
@@ -88,6 +88,7 @@ async function finishDeploy(input, { files, contentHash, version, changed, note 
   } else {
     await writeDist(files); // local provider: same output + compression artifacts as build
     publishMediaAssets();
+    publishBrandAssets();
     result = { ok: true, provider: 'local-filesystem (local; configure DEPLOY_SERVICE_URL for AWS)', version, filesWritten: files.size, url: 'file://' + DIST };
     log(true, 'Uploading (local filesystem provider)', `${files.size} files → ./dist/`);
   }

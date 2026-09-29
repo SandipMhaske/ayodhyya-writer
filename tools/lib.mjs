@@ -22,8 +22,7 @@ export function saveMediaFile(buffer, filename, dir = MEDIA_DIR) {
   return name;
 }
 
-export function publishMediaAssets(distDir = DIST, mediaDir = MEDIA_DIR) {
-  // Copies local media into the static output so imported images actually render.
+export function publishMediaAssets(distDir = DIST, mediaDir = MEDIA_DIR) {  // Copies local media into the static output so imported images actually render.
   if (!fs.existsSync(mediaDir)) return 0;
   const outDir = path.join(distDir, 'assets', 'images');
   fs.mkdirSync(outDir, { recursive: true });
@@ -35,6 +34,14 @@ export function publishMediaAssets(distDir = DIST, mediaDir = MEDIA_DIR) {
     n++;
   }
   return n;
+}
+
+export function publishBrandAssets(distDir = DIST) {
+  // Brand files every generated site carries: favicon referenced by injectHead.
+  const src = path.join(ROOT, 'assets', 'icons', 'icon.svg');
+  if (!fs.existsSync(src)) return 0;
+  fs.copyFileSync(src, path.join(distDir, 'favicon.svg'));
+  return 1;
 }
 
 export function readJsonSafe(p, fallback) {
@@ -79,6 +86,10 @@ export async function openDatabase(dbPath = process.env.AYODHYYA_DB || DB_PATH) 
   return store;
 }
 
+export function readBrandFavicon() {
+  try { return fs.readFileSync(path.join(ROOT, 'assets', 'icons', 'icon.svg'), 'utf8'); } catch { return null; }
+}
+
 export async function loadInput({ siteId } = {}) {
   const store = await openDatabase();
   try {
@@ -105,6 +116,7 @@ export async function loadInput({ siteId } = {}) {
       authors: scoped(await overlay('authors')),
       media: await overlay('media'),
       comments: scoped(await overlay('comments')),
+      brandFavicon: readBrandFavicon(),
       template,
       deploymentProfile: readJsonSafe(path.join(DATA_DIR, 'deployment-profile.json'), seed.deploymentProfile || {}),
       prevManifest: readJsonSafe(path.join(DIST, '.build-manifest.json'), null),

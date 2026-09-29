@@ -138,7 +138,30 @@ function adsenseHead(site) {
   return `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${escapeHtml(pub)}" crossorigin="anonymous"></script>`;
 }
 
-function adsenseBlock(site, placement) {
+export function analyticsHead(site) {
+  // Third-party analytics, emitted ONLY when explicitly configured. Each snippet
+  // needs its host allowlisted in CSP (see securityHeaders + CloudFormation param).
+  const cfg = site?.analytics;
+  if (!cfg || !cfg.provider || cfg.provider === 'none') return '';
+  if (cfg.provider === 'ga4') {
+    if (!cfg.measurementId) return '';
+    const id = escapeHtml(cfg.measurementId);
+    return `<script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${id}')</script>`;
+  }
+  if (cfg.provider === 'plausible') {
+    const host = escapeHtml(cfg.host || 'https://plausible.io');
+    const domain = escapeHtml(cfg.domain || site.domain || '');
+    if (!domain) return '';
+    return `<script defer data-domain="${domain}" src="${host}/js/script.js"></script>`;
+  }
+  if (cfg.provider === 'umami') {
+    if (!cfg.host || !cfg.measurementId) return '';
+    return `<script defer src="${escapeHtml(cfg.host)}/script.js" data-website-id="${escapeHtml(cfg.measurementId)}"></script>`;
+  }
+  return '';
+}
+
+export function adsenseBlock(site, placement) {
   const slot = site?.adsense?.slots?.[placement] || site?.adsense?.slots?.[site?.adsense?.placements?.[placement]];
   if (!site?.adsense?.publisherId || !slot) return '';
   return `<ins class="adsbygoogle" style="display:block" data-ad-client="${escapeHtml(site.adsense.publisherId)}" data-ad-slot="${escapeHtml(slot)}" data-ad-format="auto" data-full-width-responsive="true"></ins><script>(adsbygoogle=window.adsbygoogle||[]).push({});</script>`;
@@ -164,6 +187,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   const jsName = js ? fingerprintName('app.js', js) : null;
   if (cssName) files.set(`assets/css/${cssName}`, css);
   if (jsName) files.set(`assets/js/${jsName}`, js);
+  if (input.brandFavicon) files.set('favicon.svg', String(input.brandFavicon));
 
   const authorById = new Map(authors.map((a) => [a.id, a]));
   const catById = new Map(categories.map((c) => [c.id, c]));
@@ -186,19 +210,39 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
 
   const cssLink = cssName ? `<link rel="stylesheet" href="/assets/css/${cssName}">` : '';
   const jsTag = jsName ? `<script src="/assets/js/${jsName}" defer></script>` : '';
-
-  // Homepage
-  {
-    const cards = published.slice(0, 20).map((a) =>
-      `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p>${cardMeta(a, commentCount)}</article>`).join('\n');
-    const url = canonicalFor(site.url, '/');
-    const head = seoHead({ site, title: `${site.name} — ${site.tagline || ''}`.trim(), description: site.seo?.defaultDescription || site.description, canonical: url, jsonldObjects: [websiteJsonLd({ site })], extra: `${cssLink}\n${adsenseHead(site)}` });
-    const body = layout('index.html', baseCtx({ page: { title: site.name }, content: cards + '\n' + newsletterBlock(site), 'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name }));
-    files.set('index.html', minifyHtml(injectHead(body, head, jsTag)));
-  }
+  const siteHeadExtra = `${cssLink}\n${adsenseHead(site)}\n${analyticsHead(site)}`;
 
   // Articles
   const sitemapUrls = [{ loc: canonicalFor(site.url, '/'), lastmod: isoDate(site.updatedAt) }];
+
+  // Homepage (+ paginated archive pages /page/2/ …)
+  {
+    const perPage = Math.max(1, Number(site.postsPerPage) || 10);
+    const totalPages = Math.max(1, Math.ceil(published.length / perPage));
+    const cardsFor = (items) => items.map((a) =>
+      `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2><p>${escapeHtml(a.excerpt || '')}</p>${cardMeta(a, commentCount)}</article>`).join('\n');
+    const pageNav = (n) => {
+      const link = (p, label) => p === 1 ? `<a href="/">« ${label}</a>` : `<a href="/page/${p}/">${label}</a>`;
+      const parts = [];
+      if (n > 1) parts.push(n === 2 ? `<a href="/">« Newer</a>` : link(n - 1, '« Newer'));
+      if (n < totalPages) parts.push(link(n + 1, 'Older »'));
+      if (!parts.length) return '';
+      return `<nav class="pagenav" aria-label="Article pages"><div class="row">${parts.join('')}</div></nav>`;
+    };
+    for (let n = 1; n <= totalPages; n++) {
+      const items = published.slice((n - 1) * perPage, n * perPage);
+      const isFirst = n === 1;
+      const pagePath = isFirst ? '/' : `/page/${n}/`;
+      const url = canonicalFor(site.url, pagePath);
+      const head = seoHead({ site, title: `${site.name} — ${site.tagline || ''}`.trim() + (isFirst ? '' : ` (page ${n})`), description: site.seo?.defaultDescription || site.description, canonical: url, robots: isFirst ? undefined : 'noindex,follow', jsonldObjects: [websiteJsonLd({ site })], extra: siteHeadExtra });
+      const content = `${adsenseBlock(site, 'homepage-top')}\n${cardsFor(items)}\n${pageNav(n)}\n${isFirst ? newsletterBlock(site) : ''}\n${adsenseBlock(site, 'homepage-bottom')}`;
+      const body = layout('index.html', baseCtx({ page: { title: site.name }, content, 'seo.head': head, 'social.meta': '', 'adsense.head': adsenseHead(site), 'site.name': site.name }));
+      files.set(isFirst ? 'index.html' : `page/${n}/index.html`, minifyHtml(injectHead(body, head, jsTag)));
+      if (!isFirst) sitemapUrls.push({ loc: url, lastmod: isoDate(site.updatedAt) });
+    }
+  }
+
+  // Articles
   for (const a of published) {
     const author = authorById.get(a.authorId);
     const cat = catById.get((a.categoryIds || [])[0]);
@@ -217,7 +261,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
         articleJsonLd({ site, article: a, author, url }),
         breadcrumbJsonLd([{ name: 'Home', url: canonicalFor(site.url, '/') }, ...(cat ? [{ name: cat.name, url: canonicalFor(site.url, `/category/${cat.slug}/`) }] : []), { name: a.title, url }]),
       ],
-      extra: `${cssLink}\n${adsenseHead(site)}`,
+      extra: siteHeadExtra,
     });
     const content = `${adsenseBlock(site, 'before-article')}\n${bodyHtml}\n${adsenseBlock(site, 'after-article')}\n${commentsSection({ site, slug: a.slug, comments })}\n${newsletterBlock(site)}\n${relatedBlock(relatedArticles(a, published), commentCount)}\n${prevNextBlock(prevNext(a, published))}\n${shareBlock({ url, title: a.title })}`;
     const ctx = baseCtx({
@@ -235,8 +279,8 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   for (const c of categories) {
     const list = published.filter((a) => (a.categoryIds || []).includes(c.id));
     const url = canonicalFor(site.url, `/category/${c.slug}/`);
-    const head = seoHead({ site, title: `${c.name} — ${site.name}`, description: c.description, canonical: url, extra: cssLink });
-    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n');
+    const head = seoHead({ site, title: `${c.name} — ${site.name}`, description: c.description, canonical: url, extra: siteHeadExtra });
+    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n') + '\n' + adsenseBlock(site, 'category');
     files.set(`category/${c.slug}/index.html`, minifyHtml(injectHead(layout('category.html', baseCtx({ page: { title: c.name }, content: cards, category: c, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
     if (list.length) files.set(`category/${c.slug}/rss.xml`, buildRss({ site, articles: list, title: `${c.name} — ${site.name}`, link: url }));
     sitemapUrls.push({ loc: url, lastmod: isoDate(c.updatedAt) });
@@ -244,8 +288,8 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   for (const t of tags) {
     const list = published.filter((a) => (a.tagIds || []).includes(t.id));
     const url = canonicalFor(site.url, `/tag/${t.slug}/`);
-    const head = seoHead({ site, title: `${t.name} — ${site.name}`, canonical: url, extra: cssLink });
-    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n');
+    const head = seoHead({ site, title: `${t.name} — ${site.name}`, canonical: url, extra: siteHeadExtra });
+    const cards = list.map((a) => `<article class="card"><h2><a href="/articles/${a.slug}/">${escapeHtml(a.title)}</a></h2>${cardMeta(a, commentCount)}</article>`).join('\n') + '\n' + adsenseBlock(site, 'category');
     files.set(`tag/${t.slug}/index.html`, minifyHtml(injectHead(layout('tag.html', baseCtx({ page: { title: t.name }, content: cards, tag: t, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
     if (list.length) files.set(`tag/${t.slug}/rss.xml`, buildRss({ site, articles: list, title: `${t.name} — ${site.name}`, link: url }));
   }
@@ -253,7 +297,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   // Static pages (about/contact/privacy/...)
   for (const p of pages.filter((p) => p.status === 'Published' || p.status === 'Modified')) {
     const url = canonicalFor(site.url, `/${p.slug}/`);
-    const head = seoHead({ site, title: p.metaTitle || p.title, description: p.metaDescription, canonical: p.canonicalUrl || url, extra: cssLink });
+    const head = seoHead({ site, title: p.metaTitle || p.title, description: p.metaDescription, canonical: p.canonicalUrl || url, extra: siteHeadExtra });
     const body = addHeadingIds(sanitizeHtml(p.contentFormat === 'markdown' ? markdownToHtml(p.content) : p.content) + '\n' + contactForm(site, p.slug));
     const toc = tocFor(body);
     files.set(`${p.slug}/index.html`, minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: p.title, content: body }, content: body, toc, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
@@ -266,21 +310,21 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
       const rel = String(u.loc).replace(String(site.url).replace(/\/+$/, ''), '') || '/';
       return `<li><a href="${escapeHtml(rel)}">${escapeHtml(rel)}</a></li>`;
     }).join('\n');
-    const head = seoHead({ site, title: `Sitemap — ${site.name}`, canonical: canonicalFor(site.url, '/sitemap/'), extra: cssLink });
+    const head = seoHead({ site, title: `Sitemap — ${site.name}`, canonical: canonicalFor(site.url, '/sitemap/'), extra: siteHeadExtra });
     const body = `<ul>${rows}</ul>`;
     files.set('sitemap/index.html', minifyHtml(injectHead(layout('page.html', baseCtx({ page: { title: 'Sitemap', content: body }, content: body, 'seo.head': head, 'site.name': site.name })), head, jsTag)));
   }
 
   // Search page + index
   {
-    const head = seoHead({ site, title: `Search — ${site.name}`, canonical: canonicalFor(site.url, '/search/'), robots: 'noindex,follow', extra: cssLink });
+    const head = seoHead({ site, title: `Search — ${site.name}`, canonical: canonicalFor(site.url, '/search/'), robots: 'noindex,follow', extra: siteHeadExtra });
     files.set('search/index.html', minifyHtml(injectHead(layout('search.html', baseCtx({ page: { title: 'Search' }, content: '', 'seo.head': head, 'site.name': site.name })), head, jsTag)));
     files.set('search-index.json', JSON.stringify(buildSearchIndex({ articles })));
   }
 
   // 404
   {
-    const head = seoHead({ site, title: `Not found — ${site.name}`, robots: 'noindex,nofollow', extra: cssLink });
+    const head = seoHead({ site, title: `Not found — ${site.name}`, robots: 'noindex,nofollow', extra: siteHeadExtra });
     files.set('404.html', minifyHtml(injectHead(layout('404.html', baseCtx({ page: { title: 'Not found' }, content: '<p>Page not found.</p>', 'seo.head': head, 'site.name': site.name })), head, jsTag)));
   }
 
@@ -292,7 +336,7 @@ export async function generateSite(input, { sitemapPerPage, now } = {}) {
   files.set('rss.xml', buildRss({ site, articles: published }));
   files.set('robots.txt', buildRobots({ site, production: true }));
   files.set('manifest.webmanifest', JSON.stringify({ name: site.name, short_name: site.name, start_url: '/', display: 'standalone' }));
-  files.set('_headers.json', JSON.stringify(securityHeaders({ adsense: !!site?.adsense?.publisherId }), null, 2));
+  files.set('_headers.json', JSON.stringify(securityHeaders({ adsense: !!site?.adsense?.publisherId, analytics: site?.analytics?.provider, analyticsHost: site?.analytics?.host }), null, 2));
   // Redirect manifest for slug changes (CloudFront Functions / S3 routing compatible JSON)
   const redirects = (site.redirects || []).filter((r) => r?.from && r?.to);
   files.set('redirects.json', JSON.stringify(redirects, null, 2));
@@ -320,8 +364,10 @@ function fnvSafe(s) {
 
 function injectHead(html, head, jsTag) {
   let s = String(html ?? '');
-  if (s.includes('</head>')) return s.replace('</head>', `${head}\n${jsTag}\n</head>`);
-  return `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n${head}\n${jsTag}\n</head><body>${s}</body>`;
+  // Site-wide discovery tags every page carries: favicon + feed autodiscovery.
+  const discovery = `<link rel="icon" href="/favicon.svg" type="image/svg+xml">\n<link rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml">`;
+  if (s.includes('</head>')) return s.replace('</head>', `${head}\n${jsTag}\n${discovery}\n</head>`);
+  return `<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n${head}\n${jsTag}\n${discovery}\n</head><body>${s}</body>`;
 }
 
 function isoDate(d) {

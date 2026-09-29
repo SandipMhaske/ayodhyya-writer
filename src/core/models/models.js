@@ -32,10 +32,11 @@ export function createSite(partial = {}) {
     adsense: { publisherId: '', slots: {}, placements: {} },
     comments: { enabled: false, endpoint: '', heading: 'Comments' },
     newsletter: { enabled: false, endpoint: '', heading: 'Newsletter', text: '' },
-    analytics: { provider: 'none', measurementId: '' },
+    analytics: { provider: 'none', measurementId: '', host: '', domain: '' },
     privacy: { privacyPolicy: '', cookiePolicy: '', terms: '', advertisingDisclosure: '' },
     redirects: [],
     activeTemplateId: 'default-v1',
+    postsPerPage: 10,
     status: 'Active',
     ...partial,
   };

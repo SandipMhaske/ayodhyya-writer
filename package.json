@@ -1,6 +1,6 @@
 {
   "name": "ayodhyya-writer",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Ayodhyya Writer — offline-first lightweight publishing CRM + static website builder + one-click AWS deployment",
   "type": "module",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "preview": "node tools/preview.mjs",
     "build": "node tools/build.mjs",
     "build:full": "node tools/build.mjs --full",
-    "test": "node --test tests/utils.test.js tests/security.test.js tests/template-seo.test.js tests/optimizer-validation.test.js tests/pipeline.test.js tests/sqlite.test.js tests/server-auth.test.js tests/cloudflare.test.js tests/aws-wizard.test.js tests/backend-client.test.js tests/deploy-backend.test.js tests/backup-crypto.test.js tests/e2e-cli.test.js tests/uicheck.test.js tests/pwa.test.js tests/preview-inline.test.js tests/fetch-article.test.js tests/media-import.test.js tests/seo-analyzer.test.js tests/diff.test.js tests/engagement.test.js tests/doctor.test.js tests/themes.test.js tests/pwa-icons.test.js tests/ai-assist.test.js tests/reading.test.js tests/plugins.test.js",
+    "test": "node --test tests/utils.test.js tests/security.test.js tests/template-seo.test.js tests/optimizer-validation.test.js tests/pipeline.test.js tests/sqlite.test.js tests/server-auth.test.js tests/cloudflare.test.js tests/aws-wizard.test.js tests/backend-client.test.js tests/deploy-backend.test.js tests/backup-crypto.test.js tests/e2e-cli.test.js tests/uicheck.test.js tests/pwa.test.js tests/preview-inline.test.js tests/fetch-article.test.js tests/media-import.test.js tests/seo-analyzer.test.js tests/diff.test.js tests/engagement.test.js tests/doctor.test.js tests/themes.test.js tests/pwa-icons.test.js tests/ai-assist.test.js tests/reading.test.js tests/plugins.test.js tests/integrations.test.js",
     "deploy": "node tools/deploy.mjs",
     "db": "node tools/db.mjs --stats",
     "icons": "node tools/icons.mjs",

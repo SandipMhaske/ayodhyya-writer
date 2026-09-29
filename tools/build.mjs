@@ -2,7 +2,7 @@
 // Offline build: validate → sanitize → generate → optimize → fingerprint → compress → manifest.
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadInput, writeDist, publishMediaAssets, arg, ROOT, DIST } from './lib.mjs';
+import { loadInput, writeDist, publishMediaAssets, publishBrandAssets, arg, ROOT, DIST } from './lib.mjs';
 import { generateSite, diffManifest } from '../src/builder/generator.js';
 import { validateArticle, validateBuildOutput, validateRedirects, validateSiteHealth } from '../src/core/validators/validators.js';
 import { scanForSecrets } from '../src/security/uploads.js';
@@ -53,6 +53,7 @@ step(true, full ? 'Full rebuild' : 'Incremental build', `${diff.changed.length} 
 await writeDist(files);
 const mediaCount = publishMediaAssets();
 if (mediaCount) step(true, 'Publishing local media', `${mediaCount} image(s) → dist/assets/images/`);
+if (publishBrandAssets()) step(true, 'Publishing brand assets', 'favicon.svg');
 const templateHash = hashContent(JSON.stringify(template.files));
 fs.writeFileSync(path.join(DIST, '.build-manifest.json'), JSON.stringify({
   siteId: site.id, builtAt: new Date().toISOString(), contentHash, templateHash,

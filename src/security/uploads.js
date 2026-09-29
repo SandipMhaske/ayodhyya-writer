@@ -75,12 +75,16 @@ export function scanForSecrets(files) {
   return hits;
 }
 
-export function contentSecurityPolicy({ adsense = false, analytics = false } = {}) {
+export function contentSecurityPolicy({ adsense = false, analytics = '', analyticsHost = '' } = {}) {
   const script = ["'self'"];
   const img = ["'self'", 'data:', 'https:'];
   const connect = ["'self'"];
   if (adsense) { script.push('https://pagead2.googlesyndication.com', 'https://*.googlesyndication.com'); img.push('https://*.googlesyndication.com'); connect.push('https://*.googlesyndication.com'); }
-  if (analytics) connect.push('https://www.google-analytics.com');
+  if (analytics === 'ga4') { script.push('https://www.googletagmanager.com', 'https://www.google-analytics.com'); connect.push('https://www.google-analytics.com'); img.push('https://www.google-analytics.com'); }
+  if ((analytics === 'plausible' || analytics === 'umami') && analyticsHost) {
+    const host = String(analyticsHost).replace(/\/+$/, '');
+    script.push(host); connect.push(host);
+  }
   return [
     `default-src 'self'`,
     `script-src ${script.join(' ')}`,
@@ -92,6 +96,17 @@ export function contentSecurityPolicy({ adsense = false, analytics = false } = {
     `form-action 'self'`,
     `base-uri 'self'`,
   ].join('; ');
+}
+
+export function requiredExtraHosts(site) {
+  // Hosts the owner must paste into the CloudFormation ExtraScriptHosts param
+  // when AdSense/analytics integrations are enabled. Empty = CSP stays locked down.
+  const hosts = [];
+  if (site?.adsense?.publisherId) hosts.push('https://pagead2.googlesyndication.com', 'https://*.googlesyndication.com');
+  const a = site?.analytics;
+  if (a?.provider === 'ga4') hosts.push('https://www.googletagmanager.com', 'https://www.google-analytics.com');
+  if ((a?.provider === 'plausible' || a?.provider === 'umami') && a?.host) hosts.push(String(a.host).replace(/\/+$/, ''));
+  return [...new Set(hosts)];
 }
 
 export function securityHeaders(opts = {}) {

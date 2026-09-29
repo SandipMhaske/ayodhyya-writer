@@ -31,7 +31,7 @@ export function pagesManifest(files) {
 export function platformFiles(site) {
   // Native Pages config files, generated at deploy time (never committed by hand).
   const out = new Map();
-  const h = securityHeaders({ adsense: !!site?.adsense?.publisherId });
+  const h = securityHeaders({ adsense: !!site?.adsense?.publisherId, analytics: site?.analytics?.provider, analyticsHost: site?.analytics?.host });
   out.set('_headers', '/*\n' + Object.entries(h).map(([k, v]) => `  ${k}: ${v}`).join('\n') + '\n');
   const redirects = (site?.redirects || []).filter((r) => r?.from && r?.to);
   if (redirects.length) out.set('_redirects', redirects.map((r) => `${r.from} ${r.to} ${r.code || 301}`).join('\n') + '\n');
